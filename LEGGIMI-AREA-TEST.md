@@ -34,7 +34,9 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   turno ↔ diurno ogni 5 settimane, reperibilità non ravvicinate, festivi equi,
   2 autisti di mattina e pomeriggio e 1 o 2 di notte, 36 h settimanali.
   Il piano si salva solo nel Firebase finto (`test_generatore/<anno>`): il calendario
-  dell'app non viene toccato. Gestione operatori presente ma bloccata.
+  dell'app non viene toccato. Operatori: si aggiungono (inizio, durata in settimane
+  o mesi, affiancamento prima di turni e reperibilità) e si tolgono da una data;
+  i turni vengono rigenerati da quel giorno in poi. Regola ferie: massimo 2 insieme.
 - **Richieste dal portale**: le richieste mandate da `portale-richieste.html` (copia
   finta del portale Richieste A.S. 118) arrivano qui. "In automatico" segna l'assenza
   e trova chi la copre; nel calendario generato compare "copertura turno di …".

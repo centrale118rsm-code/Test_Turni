@@ -42,9 +42,19 @@
     function isP(v) { return v === 'P' || v === 'p'; }
     function isN(v) { return v === 'N' || v === 'M+N'; }
 
+    var FERIE_SUB = { f: 1, v: 1 };
+    // giorni in cui c'è già il massimo di persone in ferie (escluso chi chiede)
+    function ferieFull(plan, id, dates) {
+        var o = mergeOpts(plan.opts); if (!o.rules.maxFerie) return [];
+        return dates.filter(function (iso) {
+            var n = 0, row = plan.cells[iso] || {};
+            Object.keys(row).forEach(function (k) { if (k !== id && row[k] && FERIE_SUB[row[k].sub]) n++; });
+            return n >= o.maxFerie;
+        });
+    }
     var DEFAULT_OPTS = {
-        model: '7h12', nights: 1, covM: 2, covP: 2, repGapDays: 4,
-        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, mBeforeRest: true, blocks: true, repGap: true, eqFest: true }
+        model: '7h12', nights: 1, covM: 2, covP: 2, repGapDays: 4, maxFerie: 2,
+        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, mBeforeRest: true, blocks: true, repGap: true, eqFest: true, maxFerie: true }
     };
 
     /*
@@ -66,24 +76,32 @@
         var hol = input.holidays || {};
         function fest(iso) { var dt = dateOf(iso); return dt.getDay() === 0 || !!hol[dt.getMonth() + '-' + dt.getDate()]; }
         var hist = input.hist || {};
+        // periodo di servizio di ognuno (operatori aggiunti o tolti) e da quando fa turni e reperibilità
+        var meta = {};
+        ops.forEach(function (o) { meta[o.id] = { from: o.from || '', to: o.to || '', turnFrom: o.turnFrom || '', repFrom: o.repFrom || '' }; });
+        function inSvc(id, iso) { var m = meta[id]; return !m || ((!m.from || iso >= m.from) && (!m.to || iso <= m.to)); }
+        function canTurn(id, iso) { var m = meta[id]; return inSvc(id, iso) && (!m || !m.turnFrom || iso >= m.turnFrom); }
+        function canRep(id, iso) { var m = meta[id]; return inSvc(id, iso) && (!m || !m.repFrom || iso >= m.repFrom); }
 
         // ── griglia dell'anno: le caselle già scritte restano com'erano ──
         var G = {}, issues = [], covers = [];
+        function fromHist(h) { return { v: h.sub ? '' : h.v, sub: h.sub || '', fixed: !h.gen, gen: !!h.gen, cov: h.cov || '', note: h.note || '', req: h.req || '', manual: !!h.manual }; }
         days.forEach(function (iso) {
             G[iso] = {};
             ids.forEach(function (id) {
+                if (!inSvc(id, iso)) { G[iso][id] = { v: '', sub: '', off: true }; return; }
                 var h = hist[iso] && hist[iso][id];
-                if (h && (h.v || h.sub)) G[iso][id] = { v: h.sub ? '' : h.v, sub: h.sub || '', fixed: true };
+                if (h && (h.v || h.sub)) G[iso][id] = fromHist(h);
             });
         });
         (input.extraAbs || []).forEach(function (a) {
-            if (!G[a.iso] || ids.indexOf(a.id) < 0) return;
+            if (!G[a.iso] || ids.indexOf(a.id) < 0 || !inSvc(a.id, a.iso)) return;
             G[a.iso][a.id] = { v: '', sub: a.sub, fixed: true, req: a.reqId || '' };
         });
         function cell(iso, id) {
             if (G[iso]) return G[iso][id] || null;
             var h = hist[iso] && hist[iso][id];
-            return h && (h.v || h.sub) ? { v: h.sub ? '' : h.v, sub: h.sub || '', fixed: true } : null;
+            return h && (h.v || h.sub) ? fromHist(h) : null;
         }
         function vOf(iso, id) { var c = cell(iso, id); return c ? c.v : ''; }
         function isAbs(iso, id) { var c = cell(iso, id); return !!(c && c.sub); }
@@ -104,7 +122,7 @@
                 if (k <= 10 && (v === 'N' || v === 'S')) recentTurn = true;
                 if (p >= 0) votes[(p + k) % 5] += Math.pow(2, -k / 3);
             }
-            if (!recentTurn) return;
+            if (!recentTurn || !inSvc(id, X)) return;
             var best = Math.max.apply(null, votes); if (best <= 0) return;
             phase[id] = { pos: votes.indexOf(best), score: best };
         });
@@ -126,7 +144,8 @@
             turnStart[id] = s;
         });
         function queue(at, exclude) {
-            return ids.filter(function (id) { return owner.indexOf(id) < 0 && exclude.indexOf(id) < 0; }).sort(function (a, b) {
+            var endAt = addDays(at, 34) > last ? last : addDays(at, 34);
+            return ids.filter(function (id) { return owner.indexOf(id) < 0 && exclude.indexOf(id) < 0 && canTurn(id, at) && inSvc(id, endAt); }).sort(function (a, b) {
                 var absA = absIn(a, at, 35), absB = absIn(b, at, 35);
                 if ((absA > 17) !== (absB > 17)) return absA > 17 ? 1 : -1;            // chi è assente per metà blocco aspetta
                 if (lastTurn[a] !== lastTurn[b]) return lastTurn[a] < lastTurn[b] ? -1 : 1;   // da più tempo fuori turno
@@ -142,11 +161,12 @@
         });
 
         // ── 3. turnisti dal giorno X: ciclo P › M › N › S › R, cambio blocco il lunedì del P dopo 5 settimane ──
-        var role = {}, swaps = [];
+        var role = {}, swaps = [], entered = {};
         days.forEach(function (iso) {
             role[iso] = {};
             if (iso < X) {   // giorni già compilati: turnista chi ha notti o smonti vicini
                 ids.forEach(function (id) {
+                    if (!inSvc(id, iso)) { role[iso][id] = 'x'; return; }
                     var own = vOf(iso, id), t = false;
                     if (CYCLE.indexOf(own) >= 0) { for (var k = -3; k <= 3 && !t; k++) { var v = vOf(addDays(iso, k), id); if (v === 'N' || v === 'S') t = true; } }
                     else if (isAbs(iso, id)) { for (var k2 = -3; k2 <= 3 && !t; k2++) { var v2 = vOf(addDays(iso, k2), id); if (v2 === 'N' || v2 === 'S') t = true; } }
@@ -155,17 +175,24 @@
                 return;
             }
             var k = diffDays(iso, X);
+            // il turnista non è più in servizio: entra subito il primo della coda
+            owner.forEach(function (id, pos) {
+                if (id === null || inSvc(id, iso)) return;
+                var q = queue(iso, []); lastTurn[id] = addDays(iso, -1);
+                owner[pos] = q.length ? q[0] : null;
+                if (q.length) { turnStart[q[0]] = iso; entered[q[0]] = iso; swaps.push({ iso: iso, out: id, in: q[0], pos: pos, forced: true }); }
+            });
             if (R.blocks && dow(iso) === 1) {
                 owner.forEach(function (id, pos) {
                     if (id === null || CYCLE[(pos + k) % 5] !== 'P') return;
                     if (diffDays(iso, turnStart[id]) < 28) return;
                     var q = queue(iso, []); if (!q.length) return;
                     var inId = q[0];
-                    lastTurn[id] = addDays(iso, -1); owner[pos] = inId; turnStart[inId] = iso;
+                    lastTurn[id] = addDays(iso, -1); owner[pos] = inId; turnStart[inId] = iso; entered[inId] = iso;
                     swaps.push({ iso: iso, out: id, in: inId, pos: pos });
                 });
             }
-            ids.forEach(function (id) { role[iso][id] = owner.indexOf(id) >= 0 ? 't' : 'd'; });
+            ids.forEach(function (id) { role[iso][id] = !inSvc(id, iso) ? 'x' : owner.indexOf(id) >= 0 ? 't' : 'd'; });
             owner.forEach(function (id, pos) {
                 if (id === null) return;
                 var code = CYCLE[(pos + k) % 5];
@@ -176,10 +203,11 @@
                 if (!empty(iso, id)) return;
                 // smonto di una notte non fatta (assente il giorno prima): giornata libera
                 if (code === 'S' && isAbs(addDays(iso, -1), id)) { put(iso, id, 'R', { note: 'notte non fatta' }); return; }
+                if (code === 'S' && entered[id] === iso) { put(iso, id, 'R', { note: 'entra in turno' }); return; }
                 put(iso, id, code);
             });
         });
-        days.forEach(function (iso) { ids.forEach(function (id) { if (role[iso][id] === 't') turnDays[id]++; else diurnoDays[id]++; }); });
+        days.forEach(function (iso) { ids.forEach(function (id) { if (role[iso][id] === 't') turnDays[id]++; else if (role[iso][id] === 'd') diurnoDays[id]++; }); });
         function coverName(iso, shift) { var c = covers.filter(function (x) { return x.iso === iso && x.shift === shift && !x.done; })[0]; if (c) { c.done = true; return nameOf[c.absent]; } return ''; }
 
         // ── 4. diurnisti, settimana per settimana ──
@@ -345,7 +373,7 @@
 
         // ── 5. reperibilità ──
         var rep = {}, repFixed = {}, repSt = {};
-        ids.forEach(function (id) { repSt[id] = { n: 0, fest: 0, last: '0000-01-01' }; });
+        ids.forEach(function (id) { repSt[id] = { n: 0, fest: 0, last: '0000-01-01', el: 0, elF: 0 }; });
         Object.keys(input.histRep || {}).sort().forEach(function (iso) {
             var id = input.histRep[iso]; if (!repSt[id]) return;
             if (iso < first) { if (iso > repSt[id].last) repSt[id].last = iso; return; }
@@ -353,6 +381,7 @@
             rep[iso] = id; repFixed[iso] = true;
         });
         days.forEach(function (iso) {
+            ids.forEach(function (id) { if (canRep(id, iso)) { repSt[id].el++; if (fest(iso)) repSt[id].elF++; } });
             if (rep[iso]) { var id0 = rep[iso]; repSt[id0].n++; if (fest(iso)) repSt[id0].fest++; repSt[id0].last = iso; return; }
             var pick = chooseRep(iso, []); if (!pick) { issues.push({ kind: 'rep', iso: iso, text: 'Nessun reperibile possibile' }); return; }
             rep[iso] = pick.id;
@@ -361,7 +390,9 @@
         });
         function chooseRep(iso, exclude) {
             var nx = addDays(iso, 1), gap = R.repGap ? opts.repGapDays : 1, f = fest(iso);
-            function ok(id) { return exclude.indexOf(id) < 0 && !isAbs(iso, id) && !isAbs(nx, id); }
+            function ok(id) { return exclude.indexOf(id) < 0 && canRep(id, iso) && inSvc(id, nx) && !isAbs(iso, id) && !isAbs(nx, id); }
+            function rate(id) { return repSt[id].n / Math.max(1, repSt[id].el); }
+            function rateF(id) { return repSt[id].fest / Math.max(1, repSt[id].elF); }
             var tiers = [function (v) { return isM(v); }, function (v) { return isP(v); }, function (v) { return !!v && v !== 'N' && v !== 'S'; }];
             for (var t = 0; t < tiers.length; t++) {
                 var c = ids.filter(function (id) { return ok(id) && tiers[t](vOf(iso, id)); });
@@ -371,8 +402,8 @@
                     if (a.gapOk !== b.gapOk) return a.gapOk ? -1 : 1;
                     if (!R.eqRep && a.turn !== b.turn) return a.turn ? -1 : 1;
                     if (R.eqRep) {
-                        if (f && repSt[a.id].fest !== repSt[b.id].fest) return repSt[a.id].fest - repSt[b.id].fest;
-                        if (repSt[a.id].n !== repSt[b.id].n) return repSt[a.id].n - repSt[b.id].n;
+                        if (f && Math.abs(rateF(a.id) - rateF(b.id)) > 1e-9) return rateF(a.id) - rateF(b.id);
+                        if (Math.abs(rate(a.id) - rate(b.id)) > 1e-9) return rate(a.id) - rate(b.id);
                     }
                     if (a.turn !== b.turn) return a.turn ? -1 : 1;
                     return diffDays(iso, repSt[b.id].last) - diffDays(iso, repSt[a.id].last);
@@ -384,7 +415,7 @@
 
         var plan = {
             v: 1, year: Y, opts: opts, generatedAt: new Date().toISOString(), firstGenerated: X,
-            ops: ops.map(function (o) { return { id: o.id, name: o.name }; }), holidays: hol,
+            ops: ops.map(function (o) { return { id: o.id, name: o.name, from: o.from || '', to: o.to || '', turnFrom: o.turnFrom || '', repFrom: o.repFrom || '', added: !!o.added }; }), holidays: hol,
             cells: G, role: role, rep: rep, repFixed: repFixed, swaps: swaps, issues: issues, requests: {}
         };
         return plan;
@@ -424,7 +455,7 @@
             var cnt = { M: 0, P: 0, N: 0 };
             ids.forEach(function (id) {
                 var x = c(iso, id), s = stats[id];
-                if (!x) return;
+                if (!x || x.off) return;
                 var min = 0;
                 if (x.sub) { s.abs++; if (model.contractDow.indexOf(g) >= 0) min = model.dayMin; if ((g === 0 || g === 6)) s.wkRest++; }
                 else {
@@ -442,15 +473,20 @@
                 if (nx && (x.v === 'N' || x.v === 'M+N') && !x.sub) { var y = c(nx, id); if (y && !y.sub && y.v !== 'S') warns.push({ iso: nx, id: id, text: nameOf[id] + ': dopo la notte manca lo smonto' }); }
                 if (nx && x.v === 'S') { var z = c(nx, id); if (z && !z.sub && WORK[z.v] && z.v !== 'P' && z.v !== 'p') warns.push({ iso: nx, id: id, text: nameOf[id] + ': lavora di mattina il giorno dopo lo smonto' }); }
             });
-            var pre = ids.every(function (id) { var x = c(iso, id); return x && x.fixed && !x.req && !x.manual; });
+            var pre = ids.every(function (id) { var x = c(iso, id); return x && (x.off || (x.fixed && !x.req && !x.manual)); });
             if (cnt.M < opts.covM) holes.push({ iso: iso, shift: 'M', have: cnt.M, need: opts.covM, pre: pre });
             if (cnt.P < opts.covP) holes.push({ iso: iso, shift: 'P', have: cnt.P, need: opts.covP, pre: pre });
             if (cnt.N < opts.nights) holes.push({ iso: iso, shift: 'N', have: cnt.N, need: opts.nights, pre: pre });
         });
+        // quante persone in ferie nello stesso giorno
+        if (opts.rules.maxFerie) days.forEach(function (iso) {
+            var who = ids.filter(function (id) { var x = c(iso, id); return x && FERIE_SUB[x.sub]; });
+            if (who.length > opts.maxFerie) warns.push({ iso: iso, id: who[0], text: who.length + ' in ferie insieme (massimo ' + opts.maxFerie + '): ' + who.map(function (id) { return nameOf[id]; }).join(', ') });
+        });
         // giorni di fila
         ids.forEach(function (id) {
             var run = 0;
-            days.forEach(function (iso) { var x = c(iso, id); if (x && !x.sub && WORK[x.v]) { run++; if (run === 7) warns.push({ iso: iso, id: id, text: nameOf[id] + ': 7 giorni di lavoro di fila' }); } else run = 0; });
+            days.forEach(function (iso) { var x = c(iso, id); if (x && !x.off && !x.sub && WORK[x.v]) { run++; if (run === 7) warns.push({ iso: iso, id: id, text: nameOf[id] + ': 7 giorni di lavoro di fila' }); } else run = 0; });
         });
         // reperibilità
         var lastRep = {};
@@ -617,7 +653,7 @@
         return o ? o.id : null;
     }
 
-    var GTEngine = { generate: generate, analyze: analyze, applyRequest: applyRequest, revertChanges: revertChanges, needPerWeek: needPerWeek, MODELS: MODELS, DEFAULT_OPTS: DEFAULT_OPTS, mergeOpts: mergeOpts, REQ_SUB: REQ_SUB, addDays: addDays, dow: dow };
+    var GTEngine = { generate: generate, analyze: analyze, applyRequest: applyRequest, ferieFull: ferieFull, reqDates: reqDates, revertChanges: revertChanges, needPerWeek: needPerWeek, MODELS: MODELS, DEFAULT_OPTS: DEFAULT_OPTS, mergeOpts: mergeOpts, REQ_SUB: REQ_SUB, addDays: addDays, dow: dow };
     if (typeof window !== 'undefined') window.GTEngine = GTEngine;
     if (typeof module !== 'undefined' && module.exports) module.exports = GTEngine;
     if (typeof document === 'undefined') return;
@@ -668,6 +704,7 @@
     // turni già scritti nell'app (calendario di prova) → ingresso del motore
     function appInput() {
         var ops = drivers.filter(function (d) { return !d.hidden; }).map(function (d) { return { id: d.originalName, name: d.name, idx: d.idx }; });
+        var cfg = GT.opsCfg || { added: [], removed: {} };
         var hist = {}, histRep = {};
         for (var r = 1; r < finalData.length; r++) {
             var iso = repRowDate(r); if (!iso) continue;
@@ -681,7 +718,9 @@
             });
         }
         try { var t = repData().tit; Object.keys(t).forEach(function (iso) { if (t[iso]) histRep[iso] = t[iso]; }); } catch (e) {}
-        return { ops: ops.map(function (o) { return { id: o.id, name: o.name }; }), hist: hist, histRep: histRep };
+        var all = ops.map(function (o) { return { id: o.id, name: o.name }; }).concat((cfg.added || []).map(function (a) { return Object.assign({ added: true }, a); }));
+        all.forEach(function (o) { if (cfg.removed && cfg.removed[o.id]) o.to = o.to && o.to < cfg.removed[o.id] ? o.to : cfg.removed[o.id]; });
+        return { ops: all, hist: hist, histRep: histRep };
     }
     function prefilledInfo(year, inp) {
         var n = 0, lastDay = null;
@@ -693,13 +732,24 @@
         return { days: n, last: lastDay };
     }
 
-    async function gtGenerate() {
+    async function gtGenerate(fromIso) {
         if (GT.busy) return; GT.busy = true;
         try {
+            await loadOpsCfg();
             var year = GT.opts.year, inp = appInput();
-            if (GT.plan && GT.plan.year === year) {
+            if (GT.plan && GT.plan.year === year && !fromIso) {
                 var ok = await ccConfirm('Rigenerare il ' + year + '?', 'Il piano generato e le modifiche fatte a mano nel piano vengono rifatti da capo. Restano i turni già compilati nel calendario e le assenze approvate dal portale.', 'Rigenera');
                 if (!ok) return;
+            }
+            // rigenerare da un giorno: tutto quello che c'è prima resta com'è
+            if (fromIso && GT.plan && GT.plan.year === year) {
+                var P = GT.plan;
+                Object.keys(P.cells).forEach(function (d) {
+                    if (d >= fromIso) return;
+                    inp.hist[d] = inp.hist[d] || {};
+                    Object.keys(P.cells[d]).forEach(function (id) { var c = P.cells[d][id]; if (!c || c.off) return; inp.hist[d][id] = { v: c.v, sub: c.sub, gen: !c.fixed, cov: c.cov, note: c.note, req: c.req, manual: c.manual }; });
+                });
+                Object.keys(P.rep || {}).forEach(function (d) { if (d < fromIso) inp.histRep[d] = P.rep[d]; });
             }
             var extra = await loadExtraAbs(year);
             var t0 = performance.now();
@@ -709,7 +759,7 @@
             GT.plan = plan; GT.planYear = year;
             if (GT.month === null || GT.month === undefined) GT.month = Number(plan.firstGenerated.slice(5, 7)) - 1;
             await savePlan();
-            toast('Turni del ' + year + ' generati in ' + Math.round(performance.now() - t0) + ' ms');
+            toast(fromIso ? 'Turni rigenerati dal ' + fmtDay(fromIso) + ': prima di quel giorno non è cambiato nulla.' : 'Turni del ' + year + ' generati in ' + Math.round(performance.now() - t0) + ' ms');
         } catch (e) { console.error(e); toast('Generazione non riuscita: ' + e.message, true); }
         finally { GT.busy = false; renderGen(); }
     }
@@ -729,7 +779,8 @@
         { k: 'mBeforeRest', n: 5, icon: 'wb_twilight', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Per i diurnisti: il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
         { k: 'blocks', n: 6, icon: 'repeat', t: 'Turno e diurno a rotazione: 5 settimane', d: 'Le posizioni da turnista sono sempre 5. Dopo 5 settimane il turnista lascia il posto al diurnista fuori turno da più tempo (il lunedì del pomeriggio).' },
         { k: 'repGap', n: 7, icon: 'event_busy', t: 'Reperibilità non ravvicinate', d: '', gap: true },
-        { k: 'eqFest', n: 8, icon: 'calendar_month', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' }
+        { k: 'eqFest', n: 8, icon: 'calendar_month', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
+        { k: 'maxFerie', n: 9, icon: 'beach_access', t: 'Ferie: quanti alla volta', d: '', ferie: true }
     ];
     function ruleCard(r) {
         var o = GT.opts, on = !!o.rules[r.k], body = r.d;
@@ -739,6 +790,7 @@
                 return '<button class="' + (o.model === k ? 'on' : '') + '" onclick="GT.setOpt(\'model\',\'' + k + '\')"><b>' + m.label + '</b><small>' + m.workDays + ' giorni · ' + m.rests + (m.rests > 1 ? ' riposi' : ' riposo') + ' a settimana</small><small>m ' + m.m + ' · p ' + m.p + '</small></button>';
             }).join('') + '</div>';
         }
+        if (r.ferie) body = 'Al massimo <input type="number" min="1" max="5" value="' + o.maxFerie + '" class="gt-num" onchange="GT.setOpt(\'maxFerie\',Math.max(1,Math.min(5,+this.value||2)))"> persone in ferie nello stesso giorno. Se una richiesta supera il limite te lo chiedo prima di inserirla.';
         if (r.gap) body = 'Fra una reperibilità e la successiva della stessa persona almeno <input type="number" min="2" max="10" value="' + o.repGapDays + '" class="gt-num" onchange="GT.setOpt(\'repGapDays\',Math.max(2,Math.min(10,+this.value||4)))"> giorni.';
         return '<div class="gt-rule ' + (on || r.model ? 'on' : 'off') + (r.model ? ' wide' : '') + '">' +
             '<span class="gt-rule-n">' + r.n + '</span>' +
@@ -749,29 +801,119 @@
     }
     function fixedRules() {
         var o = GT.opts;
-        return '<div class="gt-rule on"><span class="gt-rule-n">9</span><span class="msym gt-rule-i">nights_stay</span><div class="gt-rule-b"><b>Autisti in servizio</b><div class="gt-rule-d">Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte: ' +
+        return '<div class="gt-rule on"><span class="gt-rule-n">10</span><span class="msym gt-rule-i">nights_stay</span><div class="gt-rule-b"><b>Autisti in servizio</b><div class="gt-rule-d">Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte: ' +
             '<span class="gt-seg gt-seg-sm"><button class="' + (o.nights === 1 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',1)">1 autista</button><button class="' + (o.nights === 2 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',2)">2 autisti</button></span></div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">10</span><span class="msym gt-rule-i">schedule</span><div class="gt-rule-b"><b>36 ore a settimana per tutti</b><div class="gt-rule-d">Turnisti: ciclo pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni = 36 h). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + ' = 36 h. Le assenze contano come giornata di contratto.</div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">11</span><span class="msym gt-rule-i">fact_check</span><div class="gt-rule-b"><b>Turni già compilati e assenze restano come sono</b><div class="gt-rule-d">Il generatore parte da quello che c\u2019è già nel calendario (turni, ferie, reperibilità) e riempie solo le caselle vuote. Dopo una notte c\u2019è sempre lo smonto, mai 7 giorni di lavoro di fila.</div></div><span class="gt-fixed">sempre</span></div>';
+            '<div class="gt-rule on"><span class="gt-rule-n">11</span><span class="msym gt-rule-i">schedule</span><div class="gt-rule-b"><b>36 ore a settimana per tutti</b><div class="gt-rule-d">Turnisti: ciclo pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni = 36 h). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + ' = 36 h. Le assenze contano come giornata di contratto.</div></div><span class="gt-fixed">sempre</span></div>' +
+            '<div class="gt-rule on"><span class="gt-rule-n">12</span><span class="msym gt-rule-i">fact_check</span><div class="gt-rule-b"><b>Turni già compilati e assenze restano come sono</b><div class="gt-rule-d">Il generatore parte da quello che c\u2019è già nel calendario (turni, ferie, reperibilità) e riempie solo le caselle vuote. Dopo una notte c\u2019è sempre lo smonto, mai 7 giorni di lavoro di fila.</div></div><span class="gt-fixed">sempre</span></div>';
     }
     function needHtml() {
-        var o = GT.opts, n = needPerWeek(o), ops = drivers.filter(function (d) { return !d.hidden; }).length;
+        var o = GT.opts, n = needPerWeek(o), y0 = o.year + '-01-01', y1 = o.year + '-12-31';
+        var ops = appInput().ops.filter(function (x) { return (!x.to || x.to >= y0) && (!x.from || x.from <= y1); }).length;
         var avail = ops * WEEK_MIN, ok = avail >= n.minutes;
         return '<div class="gt-need ' + (ok ? 'ok' : 'ko') + '"><span class="msym">' + (ok ? 'verified' : 'warning') + '</span><div><b>' +
             (ok ? 'Con ' + ops + ' operatori la copertura è possibile' : 'Con ' + ops + ' operatori non bastano le ore') + '</b><small>Servono ' + hm(n.minutes) + ' a settimana (' + o.covM + ' mattina, ' + o.covP + ' pomeriggio, ' + o.nights + ' notte con smonto); ' + ops + ' × 36 h = ' + hm(avail) + '. ' +
             (ok ? 'Le ore in più vanno a rinforzare mattine e pomeriggi in modo uniforme.' : 'Servirebbero almeno ' + Math.ceil(n.people) + ' operatori: il generatore copre tutto il possibile e segnala i buchi.') + '</small></div></div>';
     }
-    function opsHtml() {
-        var list = drivers.filter(function (d) { return !d.hidden; });
-        var today = GT.plan ? (GT.plan.firstGenerated) : null;
-        return '<div class="cc-panel"><div class="cc-panel-head"><h3>Operatori</h3><span class="gt-lock"><span class="material-icons-round">lock</span>Solo area test · bloccata per ora</span></div><div class="cc-panel-body">' +
-            '<div class="gt-ops">' + list.map(function (d) {
-                var r = GT.plan && today && GT.plan.role[today] ? GT.plan.role[today][d.originalName] : null;
-                return '<span class="gt-op"><b>' + h(d.name) + '</b>' + (r ? '<small>' + (r === 't' ? 'turnista' : 'diurnista') + ' il ' + fmtDay(today) + '</small>' : '') + '<button class="gt-op-x" disabled title="Bloccato"><span class="material-icons-round">lock</span></button></span>';
-            }).join('') + '</div>' +
-            '<div class="gt-ops-actions"><button class="cc-btn" disabled><span class="msym">person_add</span>Aggiungi operatore</button><button class="cc-btn danger" disabled><span class="msym">person_remove</span>Rimuovi operatore</button></div>' +
-            '<p class="cc-note">Aggiungere o togliere operatori dal generatore sarà possibile solo nell\u2019area test: per ora la funzione è bloccata. Il generatore usa gli operatori visibili nel calendario.</p></div></div>';
+    // ── operatori: aggiungi e togli (solo area test) ──
+    function opsDoc() { return db.collection('test_generatore').doc('operatori'); }
+    async function loadOpsCfg() {
+        try { var d = await opsDoc().get(); GT.opsCfg = d.exists ? { added: d.data().added || [], removed: d.data().removed || {} } : { added: [], removed: {} }; }
+        catch (e) { GT.opsCfg = GT.opsCfg || { added: [], removed: {} }; }
+        return GT.opsCfg;
     }
+    async function saveOpsCfg() { await opsDoc().set({ added: GT.opsCfg.added, removed: GT.opsCfg.removed, updatedAt: new Date().toISOString() }); }
+    function addSpan(iso, n, unit) {
+        n = Math.max(0, Math.round(Number(n) || 0)); if (!n) return iso;
+        if (unit === 'mesi') { var d = dateOf(iso); d.setMonth(d.getMonth() + n); return isoOf(d); }
+        return addDays(iso, n * 7);
+    }
+    function nextMonday() { var t = isoOf(new Date()); var m = mondayOf(t); return m <= t ? addDays(m, 7) : m; }
+    function opInfo(o) {
+        var bits = [];
+        if (o.added) bits.push('nuovo');
+        if (o.from) bits.push('dal ' + fmtDay(o.from));
+        if (o.to) bits.push((o.added ? 'fino al ' : 'ultimo giorno ') + fmtDay(o.to));
+        if (o.turnFrom && o.turnFrom !== o.from) bits.push('turni dal ' + fmtDay(o.turnFrom));
+        if (o.repFrom && o.repFrom !== o.from) bits.push('reperibilità dal ' + fmtDay(o.repFrom));
+        return bits.join(' · ');
+    }
+    function opsFormHtml() {
+        var f = GT.opForm; if (!f) return '';
+        var u = function (id, val) { return '<select id="' + id + '" class="cc-input gt-unit" onchange="GT.opPreview()"><option value="settimane" ' + (val === 'settimane' ? 'selected' : '') + '>settimane</option><option value="mesi" ' + (val === 'mesi' ? 'selected' : '') + '>mesi</option></select>'; };
+        if (f.mode === 'add') {
+            return '<div class="gt-opform"><h4><span class="msym">person_add</span>Nuovo operatore</h4>' +
+                '<label class="cc-field">Cognome<input id="op-name" class="cc-input" placeholder="Es. ROSSI" oninput="GT.opPreview()"></label>' +
+                '<label class="cc-field">Inizia il<input id="op-from" type="date" class="cc-input" value="' + nextMonday() + '" onchange="GT.opPreview()"></label>' +
+                '<div class="cc-field">Per quanto tempo<div class="gt-opline"><input id="op-dur" type="number" min="1" class="cc-input gt-n" value="6" oninput="GT.opPreview()">' + u('op-dur-u', 'mesi') +
+                '<label class="gt-chk"><input id="op-forever" type="checkbox" onchange="GT.opPreview()"> senza scadenza</label></div></div>' +
+                '<div class="cc-field">Prima di entrare in turno (notti) impara da diurnista per<div class="gt-opline"><input id="op-turn" type="number" min="0" class="cc-input gt-n" value="4" oninput="GT.opPreview()">' + u('op-turn-u', 'settimane') + '<small>0 = subito</small></div></div>' +
+                '<div class="cc-field">Inizia le reperibilità dopo<div class="gt-opline"><input id="op-rep" type="number" min="0" class="cc-input gt-n" value="4" oninput="GT.opPreview()">' + u('op-rep-u', 'settimane') + '<small>0 = subito</small></div></div>' +
+                '<p class="gt-opprev" id="op-prev"></p>' +
+                '<div class="gt-actions"><button class="cc-btn ghost" onclick="GT.opCancel()">Annulla</button><button class="cc-btn primary" onclick="GT.opAddSave()"><span class="msym">person_add</span>Inserisci e rigenera i turni</button></div></div>';
+        }
+        var o = appInput().ops.filter(function (x) { return x.id === f.id; })[0]; if (!o) return '';
+        return '<div class="gt-opform"><h4><span class="msym">person_remove</span>Togli ' + h(o.name) + '</h4>' +
+            '<label class="cc-field">Ultimo giorno di servizio<input id="op-last" type="date" class="cc-input" value="' + (o.to || addDays(nextMonday(), -1)) + '"></label>' +
+            '<p class="cc-note">Da quel giorno in poi il generatore lo toglie: se è turnista entra subito al suo posto il diurnista fuori turno da più tempo, e le sue reperibilità passano ad altri. Prima di quel giorno non cambia nulla.</p>' +
+            '<div class="gt-actions"><button class="cc-btn ghost" onclick="GT.opCancel()">Annulla</button><button class="cc-btn danger" onclick="GT.opRemoveSave()"><span class="msym">person_remove</span>Togli e rigenera i turni</button></div></div>';
+    }
+    function opsHtml() {
+        var list = appInput().ops, at = GT.plan ? GT.plan.firstGenerated : null;
+        return '<div class="cc-panel" id="gt-ops"><div class="cc-panel-head"><h3>Operatori</h3><span class="cc-hint">' + list.length + ' nel generatore · solo area test</span></div><div class="cc-panel-body">' +
+            '<div class="gt-ops">' + list.map(function (o) {
+                var r = GT.plan && at && GT.plan.role[at] ? GT.plan.role[at][o.id] : null, info = opInfo(o), removed = GT.opsCfg && GT.opsCfg.removed && GT.opsCfg.removed[o.id];
+                return '<span class="gt-op' + (o.added ? ' new' : '') + (removed ? ' out' : '') + '"><span><b>' + h(o.name) + '</b>' + (info ? '<small>' + h(info) + '</small>' : (r && r !== 'x' ? '<small>' + (r === 't' ? 'turnista' : 'diurnista') + ' il ' + fmtDay(at) + '</small>' : '')) + '</span>' +
+                    (removed ? '<button class="gt-op-x" title="Rimetti" onclick="GT.opRestore(\'' + h(o.id) + '\')"><span class="msym">undo</span></button>' : '<button class="gt-op-x" title="Togli" onclick="GT.opRemove(\'' + h(o.id) + '\')"><span class="msym">close</span></button>') + '</span>';
+            }).join('') + '</div>' +
+            (GT.opForm ? opsFormHtml() : '<div class="gt-ops-actions"><button class="cc-btn primary" onclick="GT.opAdd()"><span class="msym">person_add</span>Aggiungi operatore</button></div>') +
+            '<p class="cc-note">Vale solo per il generatore dell’area test: il calendario dell’app e la sua lista operatori non cambiano. Dopo ogni modifica i turni del ' + GT.opts.year + ' vengono rigenerati dal giorno interessato in poi.</p></div></div>';
+    }
+    function opVals() {
+        var g = function (id) { var e = document.getElementById(id); return e ? (e.type === 'checkbox' ? e.checked : e.value) : ''; };
+        var from = g('op-from'), name = String(g('op-name') || '').trim().toUpperCase();
+        var to = g('op-forever') || !from ? '' : addDays(addSpan(from, g('op-dur'), g('op-dur-u')), -1);
+        return { name: name, from: from, to: to, turnFrom: from ? addSpan(from, g('op-turn'), g('op-turn-u')) : '', repFrom: from ? addSpan(from, g('op-rep'), g('op-rep-u')) : '' };
+    }
+    GT.opPreview = function () {
+        var v = opVals(), el = document.getElementById('op-prev'); if (!el) return;
+        if (!v.from) { el.textContent = ''; return; }
+        el.innerHTML = '<b>' + h(v.name || 'Il nuovo operatore') + '</b> lavora dal ' + fmtDay(v.from) + (v.to ? ' al ' + fmtDay(v.to) : ' senza scadenza') + '. Fino al ' + fmtDay(addDays(v.turnFrom, -1 + (v.turnFrom === v.from ? 1 : 0))) + ' fa solo mattine e pomeriggi da diurnista' + (v.turnFrom === v.from ? ' (nessun periodo di affiancamento)' : '') + '; entra a rotazione nei turni dal ' + fmtDay(v.turnFrom) + ' e nelle reperibilità dal ' + fmtDay(v.repFrom) + '.';
+    };
+    function keepScroll(fn) { var m = document.getElementById('cc-main'), y = m ? m.scrollTop : 0; return Promise.resolve(fn()).then(function () { if (m) m.scrollTop = y; }); }
+    GT.opAdd = function () { GT.opForm = { mode: 'add' }; keepScroll(renderGen).then(function () { GT.opPreview(); var e = document.getElementById('op-name'); if (e) e.focus(); }); };
+    GT.opRemove = function (id) { GT.opForm = { mode: 'remove', id: id }; keepScroll(renderGen); };
+    GT.opCancel = function () { GT.opForm = null; keepScroll(renderGen); };
+    async function applyOpsChange(fromIso, msg) {
+        await saveOpsCfg(); GT.opForm = null;
+        var y = Number(fromIso.slice(0, 4));
+        if (y === GT.opts.year && GT.plan && GT.plan.year === y) { await gtGenerate(fromIso > y + '-01-01' ? fromIso : null); GT.month = Number(fromIso.slice(5, 7)) - 1; }
+        else if (y < GT.opts.year && GT.plan) { await gtGenerate(null); }
+        toast(msg); keepScroll(renderGen);
+    }
+    GT.opAddSave = async function () {
+        var v = opVals();
+        if (!v.name || v.name.length < 2) { toast('Scrivi il cognome.', true); return; }
+        if (!v.from) { toast('Scegli il giorno di inizio.', true); return; }
+        await loadOpsCfg();
+        if (appInput().ops.some(function (o) { return o.id === v.name; })) { toast('C’è già un operatore ' + v.name + '.', true); return; }
+        GT.opsCfg.added.push({ id: v.name, name: v.name, from: v.from, to: v.to, turnFrom: v.turnFrom, repFrom: v.repFrom });
+        await applyOpsChange(v.from, v.name + ' inserito: turni rigenerati dal ' + fmtDay(v.from) + '.');
+    };
+    GT.opRemoveSave = async function () {
+        var f = GT.opForm, last = (document.getElementById('op-last') || {}).value; if (!f || !last) return;
+        await loadOpsCfg();
+        var a = GT.opsCfg.added.filter(function (x) { return x.id === f.id; })[0];
+        if (a && last < a.from) GT.opsCfg.added = GT.opsCfg.added.filter(function (x) { return x.id !== f.id; });
+        else GT.opsCfg.removed[f.id] = last;
+        await applyOpsChange(addDays(last, 1), nameOf(f.id) + ' tolto dal ' + fmtDay(addDays(last, 1)) + ': turni rigenerati.');
+    };
+    GT.opRestore = async function (id) {
+        await loadOpsCfg(); var d = GT.opsCfg.removed[id]; if (!d) return;
+        var ok = await ccConfirm('Rimettere ' + nameOf(id) + '?', 'Torna nel generatore e i turni vengono rigenerati dal ' + fmtDay(addDays(d, 1)) + '.', 'Rimetti');
+        if (!ok) return;
+        delete GT.opsCfg.removed[id];
+        await applyOpsChange(addDays(d, 1), nameOf(id) + ' rimesso.');
+    };
     function kpi(icon, val, label, cls) { return '<div class="gt-kpi ' + (cls || '') + '"><span class="msym">' + icon + '</span><b>' + val + '</b><small>' + label + '</small></div>'; }
     function resultHtml() {
         var p = GT.plan; if (!p) return '';
@@ -805,11 +947,12 @@
             (probs ? '<details class="gt-det" ' + (A.holes.length ? 'open' : '') + '><summary>Da controllare (' + (A.holes.length + A.warns.length) + ')</summary><ul class="cc-list">' + probs + '</ul></details>' : '<div class="cc-empty"><span class="msym">verified</span>Tutto coperto, nessuna regola violata.</div>') +
             '</div></div>';
     }
-    function nameOf(id) { var o = GT.plan && GT.plan.ops.filter(function (x) { return x.id === id; })[0]; return o ? o.name : id; }
+    function nameOf(id) { var o = GT.plan && GT.plan.ops.filter(function (x) { return x.id === id; })[0]; return o ? o.name : cap(id); }
     function cellHtml(iso, id) {
         var p = GT.plan, c = p.cells[iso][id], isRep = p.rep[iso] === id, sel = GT.sel && GT.sel.iso === iso && GT.sel.id === id;
         var cls = 'gt-c', inner = '', style = '';
-        if (c) {
+        if (c && c.off) { cls += ' off'; inner = '<small>fuori servizio</small>'; }
+        else if (c) {
             if (c.sub) { cls += ' abs'; var col = (typeof SUB_CODE_COLORS !== 'undefined' && SUB_CODE_COLORS[c.sub]) || null; if (col) style = 'background:var(' + col.bg + ');color:var(' + col.fg + ')'; inner = '<b>' + h(SUB_LABEL[c.sub] || c.sub.toUpperCase()) + '</b>'; }
             else {
                 var key = { M: 'M', P: 'P', N: 'N', S: 'SM', R: 'R', m: 'dM', p: 'dP', r: 'dR', 'M+N': 'N' }[c.v];
@@ -856,6 +999,7 @@
     async function renderGen() {
         var main = document.getElementById('cc-main'); if (!main || ccSection !== 'generazione') return;
         if (!GT.opts) loadOpts();
+        if (!GT.opsCfg) await loadOpsCfg();
         var o = GT.opts, inp = appInput();
         var years = [SHIFT_YEAR, SHIFT_YEAR + 1, SHIFT_YEAR + 2];
         if (years.indexOf(o.year) < 0) o.year = SHIFT_YEAR + 1;
@@ -935,6 +1079,13 @@
             await loadPlan(year);
             if (!GT.plan) { toast('Prima genera i turni del ' + year + ' (Generazione turni).', true); return; }
             if (!GTEngine.REQ_SUB[r.type] && r.type !== 'cambio_turno' && r.type !== 'copertura_reperibilita' && choice === 'automatica') { toast('Questa richiesta (' + (REQ_LABEL[r.type] || r.type) + ') va inserita a mano.', true); return; }
+            if (FERIE_SUB[GTEngine.REQ_SUB[r.type]]) {
+                var who = matchOp(GT.plan, r.name), full = ferieFull(GT.plan, who, reqDates(r, GT.plan));
+                if (full.length) {
+                    var go = await ccDialog('Già ' + mergeOpts(GT.plan.opts).maxFerie + ' in ferie', 'In ' + full.length + (full.length === 1 ? ' giorno' : ' giorni') + ' (' + full.slice(0, 5).map(fmtDay).join(', ') + (full.length > 5 ? '…' : '') + ') ci sono già ' + mergeOpts(GT.plan.opts).maxFerie + ' persone in ferie. Inserire comunque?', [{ label: 'Annulla', kind: 'ghost', value: false }, { label: 'Inserisci comunque', kind: 'solid-danger', value: true }]);
+                    if (!go) return;
+                }
+            }
             var res = applyRequest(GT.plan, r, choice === 'automatica' ? 'auto' : 'manuale');
             if (res.error) { toast(res.error, true); return; }
             GT.plan.requests[r.id] = { mode: choice === 'automatica' ? 'auto' : 'manuale', at: new Date().toISOString(), changes: res.changes, holes: res.holes, notes: res.notes };
@@ -971,7 +1122,7 @@
     }
 
     // ── azioni ──
-    GT.generate = gtGenerate;
+    GT.generate = function () { return gtGenerate(); };
     GT.clear = gtClear;
     GT.setYear = function (y) { GT.opts.year = y; GT.month = null; GT.sel = null; saveOpts(); renderGen(); };
     GT.setRule = function (k, v) { GT.opts.rules[k] = !!v; saveOpts(); renderGen(); };
@@ -1085,6 +1236,14 @@
         '.gt-op{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--cc-line);border-radius:999px;padding:5px 6px 5px 12px;font-size:13px}.gt-op small{color:var(--cc-muted);font-size:11px}',
         '.gt-op-x{border:0;background:var(--cc-surface-2);border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;color:var(--cc-muted)}.gt-op-x .material-icons-round{font-size:14px}',
         '.gt-ops-actions{display:flex;gap:8px;margin-bottom:10px}',
+        '.gt-op>span{display:flex;flex-direction:column}.gt-op.new{border-color:var(--cc-accent);background:var(--cc-accent-soft)}.gt-op.out{opacity:.6;border-style:dashed}',
+        '.gt-op-x{cursor:pointer}.gt-op-x .msym{font-size:16px}',
+        '.gt-opform{border:1px solid var(--cc-accent);border-radius:8px;padding:14px;margin-bottom:12px;display:grid;gap:12px;max-width:620px}',
+        '.gt-opform h4{margin:0;display:flex;gap:6px;align-items:center;font-size:15px}',
+        '.gt-opline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}.gt-opline small{color:var(--cc-muted)}',
+        '.gt-n{width:80px}.gt-unit{width:auto;min-width:120px}.gt-chk{display:inline-flex;gap:6px;align-items:center;font-weight:400}',
+        '.gt-opprev{margin:0;font-size:13px;padding:10px 12px;border-radius:6px;background:var(--cc-surface-2)}',
+        '.gt .gt-cal tbody td.gt-c.off{background:repeating-linear-gradient(-45deg,var(--cc-surface-2) 0 6px,transparent 6px 12px);color:var(--cc-muted);cursor:default}.gt-c.off small{font-size:9.5px}',
         '.gt-reqs li{align-items:flex-start;flex-wrap:wrap}.gt-res{display:block;margin-top:6px;padding:6px 8px;border-left:3px solid var(--cc-accent);background:var(--cc-surface-2);border-radius:0 4px 4px 0}',
         '@media (max-width:640px){.gt-rules{grid-template-columns:1fr;padding:10px}.gt .gt-cal tbody td.gt-c{min-width:58px}.gt-year button{padding:8px 12px}}'
     ].join('\n');
