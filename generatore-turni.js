@@ -403,9 +403,12 @@
             for (var t = 0; t < tiers.length; t++) {
                 var c = ids.filter(function (id) { return ok(id) && tiers[t](vOf(iso, id)); });
                 if (!c.length) continue;
-                c = c.map(function (id) { return { id: id, gapOk: diffDays(iso, repSt[id].last) >= gap, turn: role[iso] && role[iso][id] === 't' && vOf(iso, id) === 'M' }; });
+                // il giorno dopo la reperibilità (fino alle 13) si lavora: il turnista fa la notte, il diurnista il pomeriggio; mai un riposo
+                c = c.map(function (id) { var nv = vOf(nx, id); return { id: id, gapOk: diffDays(iso, repSt[id].last) >= gap, turn: role[iso] && role[iso][id] === 't' && vOf(iso, id) === 'M', next: !nv || REST[nv] ? 0 : (nv === 'N' || nv === 'p' || nv === 'P' ? 2 : 1) }; });
                 c.sort(function (a, b) {
+                    if ((a.next > 0) !== (b.next > 0)) return a.next > 0 ? -1 : 1;
                     if (a.gapOk !== b.gapOk) return a.gapOk ? -1 : 1;
+                    if (a.next !== b.next) return b.next - a.next;
                     if (!R.eqRep && a.turn !== b.turn) return a.turn ? -1 : 1;
                     if (R.eqRep) {
                         if (f && Math.abs(rateF(a.id) - rateF(b.id)) > 1e-9) return rateF(a.id) - rateF(b.id);
@@ -636,7 +639,9 @@
             Object.keys(plan.rep).forEach(function (d) { if (d === iso) return; var id = plan.rep[d], k = Math.abs(diffDays(iso, d)); if (near[id] === undefined || k < near[id]) near[id] = k; });
             var count = {}; Object.keys(plan.rep).forEach(function (d) { count[plan.rep[d]] = (count[plan.rep[d]] || 0) + 1; });
             var c = ids.filter(function (id) { return exclude.indexOf(id) < 0 && !abs(iso, id) && !abs(addDays(iso, 1), id) && v(iso, id) && v(iso, id) !== 'N' && v(iso, id) !== 'S' && !REST[v(iso, id)]; });
+            var nxt = function (id) { var nv = v(addDays(iso, 1), id); return !nv || REST[nv] ? 0 : 1; };
             c.sort(function (a, b) {
+                if (nxt(a) !== nxt(b)) return nxt(b) - nxt(a);
                 var ga = near[a] === undefined || near[a] >= gap, gb = near[b] === undefined || near[b] >= gap;
                 if (ga !== gb) return ga ? -1 : 1;
                 if (isM(v(iso, a)) !== isM(v(iso, b))) return isM(v(iso, a)) ? -1 : 1;
