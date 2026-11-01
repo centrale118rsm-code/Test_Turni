@@ -5678,6 +5678,8 @@
             ] },
             { group:'Gestione' },
             { id:'coord', icon:'supervisor_account', label:'Area coordinatore', desc:'Accesso riservato', color: MN_COLORS.coord, lock:true, run: () => openCoordLoginModal() },
+            { id:'gtcal', icon:'event_upcoming', label:'Turni generati (area test)', desc:'Apre nel calendario l\u2019anno creato dal generatore', color: MN_COLORS.coord, run: () => window.GT && GT.openCalendarPicker() },
+            { id:'gtportal', icon:'assignment', label:'Portale richieste (prova)', desc:'Manda una richiesta finta al coordinatore', color: MN_COLORS.link, run: () => window.open('portale-richieste.html', '_blank') },
             { id:'admin', icon:'admin_panel_settings', label:'Area admin', desc:'Accesso riservato', color: MN_COLORS.admin, lock:true, run: () => openAdminLoginModal() },
             { group:'App' },
             { id:'imp', icon:'tune', label:'Impostazioni', desc:'Tema, notifiche, utente, aggiornamento', color: MN_COLORS.imp, children: [
@@ -8786,9 +8788,15 @@
         let t = 0; for(let r = 1; r < finalData.length; r++) { if(r === skipRow || shiftRowYear(r) !== SHIFT_YEAR) continue; const p = permOfCell(r, col); if(p && p.k === k) t += p.h; }
         return Math.round(t * 100) / 100;
     }
+    // AREA TEST: chi copre un'assenza nei turni generati (generatore-turni.js) → "copertura turno di …"
+    function gtCovTagHtml(info) {
+        const c = info && info.gtCov; if(!c) return '';
+        return `<div class="gt-cov-tag">${c === '2ª notte' ? '2ª notte' : 'copertura turno di ' + esc(String(c).charAt(0) + String(c).slice(1).toLowerCase())}</div>`;
+    }
     function permTagHtml(info) {
-        const p = info && info.perm; if(!p || !PERM_HOURLY[p.k] || !(Number(p.h) > 0)) return '';
-        return `<div class="perm-tag perm-${p.k}">${PERM_HOURLY[p.k].short} ${permHFmt(p.h)}</div>`;
+        const cov = gtCovTagHtml(info);
+        const p = info && info.perm; if(!p || !PERM_HOURLY[p.k] || !(Number(p.h) > 0)) return cov;
+        return `<div class="perm-tag perm-${p.k}">${PERM_HOURLY[p.k].short} ${permHFmt(p.h)}</div>` + cov;
     }
     // ── sezione "Permesso a ore" nel popup della casella ──
     let sepPermKind = 'pl';
@@ -11782,7 +11790,7 @@
     }
     function returnToActiveYear() {
         if(!isViewingArchive()) return;
-        const b = ccArchiveBackup; ccArchiveBackup = null;
+        const b = ccArchiveBackup; ccArchiveBackup = null; if(window.GT) GT.viewing = null;
         finalData = b.finalData; rawFinalData = b.rawFinalData; drivers = b.drivers; operatorConfig = b.operatorConfig;
         excelParsedData = b.excelParsedData; selectedDrivers = b.selectedDrivers; setShiftYear(b.SHIFT_YEAR);
         applyManualOverrides();
@@ -11805,7 +11813,9 @@
         if(banner) {
             const on = isViewingArchive();
             banner.style.display = on ? 'flex' : 'none';
-            if(on) document.getElementById('year-banner-text').textContent = `Stai guardando il ${SHIFT_YEAR} (sola lettura) · tocca per tornare al ${activeYear}`;
+            if(on) document.getElementById('year-banner-text').textContent = (window.GT && GT.viewing === SHIFT_YEAR)
+                ? `AREA TEST · turni ${SHIFT_YEAR} generati (sola lettura) · tocca per tornare al ${activeYear}`
+                : `Stai guardando il ${SHIFT_YEAR} (sola lettura) · tocca per tornare al ${activeYear}`;
             document.documentElement.style.setProperty('--header-h', on ? 'calc(var(--header-base-h) + var(--safe-top) + 34px)' : 'calc(var(--header-base-h) + var(--safe-top))');
         }
         const ccb = document.getElementById('cc-archive-banner');
@@ -14593,7 +14603,7 @@
                     <div style="font-weight:900;font-size:0.68rem;letter-spacing:-0.2px;">MATT. + NOTTE</div>
                     <div class="time-tag">M: ${SCHEDULE["M"]}</div>
                     <div class="time-tag">N: ${SCHEDULE["N"]}</div>
-                </div>${repHtml}</div>`;
+                </div>${gtCovTagHtml(info)}${repHtml}</div>`;
         }
 
         // ── GRAVIDANZA (subVal === "gr") ───────────────────────────────────────
