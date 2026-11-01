@@ -42,6 +42,32 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   7h12 06:30–13:42 / 13:15–20:27. Operatori: si aggiungono (inizio, durata in settimane
   o mesi, affiancamento prima di turni e reperibilità) e si tolgono da una data;
   i turni vengono rigenerati da quel giorno in poi. Regola ferie: massimo 2 insieme.
+  Ciclo dei turnisti a scelta: P › M › N › S › R (quello di oggi), M › P › N › S › R
+  (rotazione in avanti, la reperibilità va al turnista di mattina che il giorno dopo fa il
+  pomeriggio) o 12 h G › N › S › R › R (giorno 08–20 = casella "G", notte 20–08).
+  Riposi dei diurnisti divisi anche sul venerdì. Dopo una notte sempre smonto e riposo,
+  anche per il diurnista che la copre; mai 7 giorni di lavoro di fila.
+- **Menu rapido sotto la scritta AREA TEST** (freccia): rifà tutto l'anno con un altro
+  modello diurnisti (6 h / 7 h 12), ciclo turnisti, 2ª notte, riposi del venerdì, oppure
+  con **assenze simulate** come nel 2026 vero (C.O. ~28 giorni a testa in 4–5 periodi,
+  ferie residue a inizio anno, 3–5 permessi, permessi notte sulle notti, malattie, recuperi,
+  permessi legge), mai più di 2 assenti insieme; "con cambio ferie" aggiunge 2 giorni in cui
+  due periodi di ferie finiscono e lo stesso giorno ne parte un terzo (3 assenti).
+  Le assenze simulate stanno in `test_generatore/simassenze_<anno>` e si tolgono dal menu.
+  "Schema consigliato" = turnisti M › P › N › S › R, diurnisti 6 h, riposi anche il venerdì.
+
+  Confronto (2027, assenze simulate come nel 2026, media di 8 anni casuali, 9 operatori):
+
+  | Diurnisti / turnisti | Turni scoperti | Riposi < 11 h | Sab/dom liberi | Weekend interi | Giorni lavorati |
+  |---|---|---|---|---|---|
+  | 6 h · M › P › N › S › R | 32 | 0 | 17 | 0,3 | 200 |
+  | 6 h · P › M › N › S › R | 32 | 31 | 17 | 0,3 | 200 |
+  | 7 h 12 · M › P › N › S › R | 47 | 30 | 22 | 3 | 186 |
+  | 7 h 12 · P › M › N › S › R | 48 | 60 | 22 | 3 | 186 |
+  | 7 h 12 · turnisti 12 h | 59 | 29 | 32 | 8 | 153 |
+  | 6 h · turnisti 12 h | 52 | 0 | 26 | 5 | 167 |
+
+  Con un 10° operatore i turni scoperti scendono a 1–4 l'anno (7 h 12: 1, 6 h: 3, 12 h: 6–7).
 - **Richieste dal portale**: il pannello che si apre con la freccia a destra dello schermo
   carica `richieste/` (copia del portale Richieste A.S. 118 collegata solo al Firebase
   finto tramite `firebase-modular-shim.js`, non a quello vero). Le richieste fatte lì
