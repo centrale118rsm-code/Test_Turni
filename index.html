@@ -6793,6 +6793,7 @@
     // reperibile, reperibile assente. Regole: notte senza smonto, riposo sotto le 10 ore
     // (il passaggio pomeriggio → mattina della rotazione in quinta dà 10 h 20 ed è ammesso),
     // 7 o più giorni lavorati di fila. Visibili in Modifica turni e nella Panoramica.
+    // AREA TEST: "G" è il turno di giorno di 12 h (08–20) dei turnisti creato dal generatore: conta di mattina e di pomeriggio
     const COVERAGE_DEFAULT = { M:2, P:2, N:1 };   // autisti: 2 ambulanze di mattina e di pomeriggio, 1 di notte
     let coverageMin = Object.assign({}, COVERAGE_DEFAULT), dayChecksCache = null;
     const SHIFT_SPAN = { M:['06:30','13:15'], P:['12:45','20:10'], N:['19:45','24:00'], m:['06:30','13:42'], p:['13:15','20:27'] };
@@ -6816,7 +6817,7 @@
         const active = drivers.filter(d => !d.hidden);
         days.forEach((dd, i) => {
             const cnt = { M:0, P:0, N:0 };
-            active.forEach(d => { const c = workCode(dd.rowIdx, d.idx); if(c === 'M' || c === 'm' || c === 'M+N') cnt.M++; if(c === 'P' || c === 'p') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++; });
+            active.forEach(d => { const c = workCode(dd.rowIdx, d.idx); if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') cnt.M++; if(c === 'P' || c === 'p' || c === 'G') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++; });
             const names = { M:'mattina', P:'pomeriggio', N:'notte' };
             ['M','P','N'].forEach(k => { if(cnt[k] < coverageMin[k]) get(dd.rowIdx).day.push(asCoverageMsg(dd, k, cnt[k], names[k])); });
             const iso = ymd(dd.date);
@@ -7091,7 +7092,7 @@
                 return;
             }
             const c = workCode(dd.rowIdx, d.idx);
-            if(c === 'M' || c === 'm' || c === 'M+N') cnt.M++; if(c === 'P' || c === 'p') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++;
+            if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') cnt.M++; if(c === 'P' || c === 'p' || c === 'G') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++;
         });
         const bl = frBlockedOn(rules, dd);
         const low = rules.useCoverage && (cnt.M + cnt.P + cnt.N) > 0 ? ['M','P','N'].filter(k => cnt[k] < coverageMin[k]) : [];
@@ -7119,7 +7120,7 @@
                 return;
             }
             const c = workCode(dd.rowIdx, d.idx);
-            if(c === 'M' || c === 'm' || c === 'M+N') cnt.M++; if(c === 'P' || c === 'p') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++;
+            if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') cnt.M++; if(c === 'P' || c === 'p' || c === 'G') cnt.P++; if(c === 'N' || c === 'M+N') cnt.N++;
         });
         let myShift = null, meAbsent = false;
         if(me) { const info = computeDayInfo(dd.rowIdx, me.idx); if(info.justified) meAbsent = true; else if(FR_WORK.includes(info.code)) myShift = info.code; }
@@ -7316,7 +7317,7 @@
         const active = drivers.filter(d => !d.hidden), me = prefMe(), perm = ovAdvKind === 'perm', PR = permRules();
         const chip = (d, extra) => { const meta = ccCodeMeta(computeDayInfo(r, d.idx)); const st = meta.colors ? `--sw:var(${meta.colors.bg});--sf:var(${meta.colors.fg})` : ''; return `<span class="ovs-chip" style="${st}">${esc(d.name)}${extra ? ' · ' + esc(extra) : ''}</span>`; };
         const groups = { M:[], P:[], N:[] };
-        active.forEach(d => { const c = workCode(r, d.idx); if(c === 'M' || c === 'm' || c === 'M+N') groups.M.push(d); if(c === 'P' || c === 'p') groups.P.push(d); if(c === 'N' || c === 'M+N') groups.N.push(d); });
+        active.forEach(d => { const c = workCode(r, d.idx); if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') groups.M.push(d); if(c === 'P' || c === 'p' || c === 'G') groups.P.push(d); if(c === 'N' || c === 'M+N') groups.N.push(d); });
         const absent = active.filter(d => computeDayInfo(r, d.idx).justified);
         const fer = f.fer || [], permList = perm ? f.perm : absent.filter(d => PR.codes.includes(computeDayInfo(r, d.idx).code));
         const title = dd.date.toLocaleDateString('it-IT', { weekday:'long', day:'numeric', month:'long' });
@@ -7727,7 +7728,7 @@
             });
         });
         // copertura: mattina e pomeriggio richiamando chi è di riposo (solo caselle che la bozza può scrivere)
-        const count = (k, what) => active.reduce((a, d) => { const c = fin[d.idx][k]; return a + (what === 'M' ? (c === 'M' || c === 'm' || c === 'M+N') : what === 'P' ? (c === 'P' || c === 'p') : (c === 'N' || c === 'M+N')); }, 0);
+        const count = (k, what) => active.reduce((a, d) => { const c = fin[d.idx][k]; return a + (what === 'M' ? (c === 'M' || c === 'm' || c === 'M+N' || c === 'G') : what === 'P' ? (c === 'P' || c === 'p' || c === 'G') : (c === 'N' || c === 'M+N')); }, 0);
         const minRest = DRAFT_IS_AS ? 2 : 1, recalls = [];
         const weekRests = (idx, k) => { const mon = new Date(target[k].date); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); let n = 0; target.forEach((dd, q) => { if(dd.date >= mon && (dd.date - mon) < 7 * 86400000 && /^[rR]$/.test(fin[idx][q])) n++; }); return n; };
         if(opts.cover) target.forEach((dd, k) => {
@@ -8506,7 +8507,7 @@
         const items = [];
         if(dd) {
             const by = { M: [], P: [], N: [] };
-            drivers.filter(d => !d.hidden).forEach(d => { const c = workCode(dd.rowIdx, d.idx), n = d.name.charAt(0) + d.name.slice(1).toLowerCase(); if(c === 'M' || c === 'm' || c === 'M+N') by.M.push(n); if(c === 'P' || c === 'p') by.P.push(n); if(c === 'N' || c === 'M+N') by.N.push(n); });
+            drivers.filter(d => !d.hidden).forEach(d => { const c = workCode(dd.rowIdx, d.idx), n = d.name.charAt(0) + d.name.slice(1).toLowerCase(); if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') by.M.push(n); if(c === 'P' || c === 'p' || c === 'G') by.P.push(n); if(c === 'N' || c === 'M+N') by.N.push(n); });
             [['M', 'Mattina'], ['P', 'Pomeriggio'], ['N', 'Notte']].forEach(([k, l]) => { if(by[k].length) items.push(`<b>${l}:</b> ${esc(by[k].join(', '))}`); });
             const key = dd.month + '-' + dd.day, notes = asNotesByDate[key] || [];
             if(notes.length) items.push(`<b>${notes.length} ${notes.length > 1 ? 'note' : 'nota'} oggi:</b> ${esc(notes.slice(0, 3).map(n => (n.testo || '').slice(0, 44)).join(' • '))}`);
@@ -8737,7 +8738,7 @@
         }));
         // diurnisti: seconda ambulanza (o prima, se manca il turnista) di mattina e pomeriggio
         const isTurnOn = (idx, k) => owner[k].includes(idx);
-        const cnt = (k, sh) => active.reduce((a, d) => { const c = fin[d.idx][k]; return a + (sh === 'M' ? (c === 'M' || c === 'm' || c === 'M+N') : sh === 'P' ? (c === 'P' || c === 'p') : (c === 'N' || c === 'M+N')); }, 0);
+        const cnt = (k, sh) => active.reduce((a, d) => { const c = fin[d.idx][k]; return a + (sh === 'M' ? (c === 'M' || c === 'm' || c === 'M+N' || c === 'G') : sh === 'P' ? (c === 'P' || c === 'p' || c === 'G') : (c === 'N' || c === 'M+N')); }, 0);
         const weekShifts = (idx, k) => { const mon = new Date(target[k].date); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); let n = 0; target.forEach((dd, q) => { if(dd.date >= mon && dd.date - mon < 7 * 86400000 && /^[mpMP]$/.test(fin[idx][q])) n++; }); return n; };
         target.forEach((dd, k) => {
             [['M', 'm'], ['P', 'p']].forEach(([sh, code]) => {
@@ -8920,8 +8921,8 @@
         drivers.forEach(d => {
             if(d.hidden) return;
             const c = workCode(i, d.idx), w = [];
-            if(c === 'M' || c === 'm' || c === 'M+N') w.push('M');
-            if(c === 'P' || c === 'p') w.push('P');
+            if(c === 'M' || c === 'm' || c === 'M+N' || c === 'G') w.push('M');
+            if(c === 'P' || c === 'p' || c === 'G') w.push('P');
             if(c === 'N' || c === 'M+N') w.push('N');
             if(w.length) { who[d.idx] = w; w.forEach(s => cnt[s]++); }
         });
