@@ -695,7 +695,7 @@
     async function loadPlan(year) {
         if (GT.planYear === year && GT.plan) return GT.plan;
         GT.plan = null; GT.planYear = year;
-        try { var s = await planDoc(year).get(); if (s.exists && s.data().json) GT.plan = JSON.parse(s.data().json); } catch (e) { console.error(e); }
+        try { var s = await planDoc(year).get(); if (s.exists && s.data().json) GT.plan = JSON.parse(s.data().json); GT.written[year] = s.exists && s.data().written ? JSON.parse(s.data().written) : { cells: {}, rep: {}, legacy: true }; } catch (e) { console.error(e); }
         return GT.plan;
     }
     async function savePlan() {
@@ -757,6 +757,14 @@
                     Object.keys(P.cells[d]).forEach(function (id) { var c = P.cells[d][id]; if (!c || c.off) return; inp.hist[d][id] = { v: c.v, sub: c.sub, gen: !c.fixed, cov: c.cov, note: c.note, req: c.req, manual: c.manual }; });
                 });
                 Object.keys(P.rep || {}).forEach(function (d) { if (d < fromIso) inp.histRep[d] = P.rep[d]; });
+            }
+            if (GT.plan && GT.plan.year === year) {
+                var P0 = GT.plan;
+                Object.keys(inp.hist).forEach(function (d) {
+                    if (d.slice(0, 4) !== String(year) || (fromIso && d < fromIso)) return;
+                    Object.keys(inp.hist[d]).forEach(function (id) { var pc = P0.cells[d] && P0.cells[d][id], h = inp.hist[d][id]; if (pc && pc.gen && (pc.v || '') === (h.v || '') && (pc.sub || '') === (h.sub || '')) delete inp.hist[d][id]; });
+                });
+                Object.keys(inp.histRep).forEach(function (d) { if (d.slice(0, 4) === String(year) && d >= P0.firstGenerated && (!fromIso || d >= fromIso) && P0.rep[d] === inp.histRep[d]) delete inp.histRep[d]; });
             }
             var extra = await loadExtraAbs(year);
             var t0 = performance.now();
@@ -1021,8 +1029,8 @@
         if (!GT.opts) loadOpts();
         if (!GT.opsCfg) await loadOpsCfg();
         var o = GT.opts, inp = appInput();
-        var years = [SHIFT_YEAR, SHIFT_YEAR + 1, SHIFT_YEAR + 2];
-        if (years.indexOf(o.year) < 0) o.year = SHIFT_YEAR + 1;
+        var Y0 = typeof realActiveYear !== 'undefined' ? realActiveYear : SHIFT_YEAR, years = [Y0, Y0 + 1, Y0 + 2];
+        if (years.indexOf(o.year) < 0) o.year = Y0 + 1;
         await loadPlan(o.year);
         var pre = prefilledInfo(o.year, inp);
         var step = function (n, id, title, hint, body) { return '<div class="gt-step" id="' + id + '"><div class="gt-step-h"><span class="gt-step-n">' + n + '</span><h3>' + title + '</h3>' + (hint ? '<span class="cc-hint">' + hint + '</span>' : '') + '</div>' + body + '</div>'; };
@@ -1170,46 +1178,81 @@
     // Il piano viene scritto dove l'app tiene gli anni (documenti "turni_AAAA-MM" + "anno_AAAA"):
     // l'anno compare nel selettore anni (menu › Calendario › Anni), in sola lettura come gli anni
     // passati, e a capodanno diventa l'anno attivo con questi turni. Tutto nel Firebase finto.
-    GT.calYears = []; GT.yearModel = {}; GT.covMap = {};
+    GT.calYears = []; GT.yearModel = {}; GT.covMap = {}; GT.written = {};
     function planCovMap(p) { var m = {}; Object.keys(p.cells).forEach(function (iso) { Object.keys(p.cells[iso]).forEach(function (id) { var c = p.cells[iso][id]; if (c && c.cov && !c.off) m[iso + '|' + id] = c.cov; }); }); return m; }
     function rememberYear(p) {
         var y = p.year, mk = MODELS[(p.opts && p.opts.model)] ? p.opts.model : '7h12';
         if (GT.calYears.indexOf(y) < 0) GT.calYears.push(y);
         GT.calYears.sort(); GT.yearModel[y] = MODELS[mk].cal; GT.covMap[y] = planCovMap(p);
     }
+    // Scrive solo le caselle del generatore: quelle cambiate a mano nel calendario dopo l'ultima
+    // scrittura (e quelle che c'erano già) restano come sono.
+    function sameCell(a, b) { return !!a && !!b && (a.v || '') === (b.v || '') && (a.subV || '') === (b.subV || ''); }
     async function writePlanToCalendar(p) {
         if (!p || typeof cfgRef !== 'function') return;
-        var y = p.year, ids = p.ops.map(function (o) { return o.id; }), months = [], now = new Date().toISOString();
-        for (var m = 0; m < 12; m++) months.push({});
+        var y = p.year, ids = p.ops.map(function (o) { return o.id; }), now = new Date().toISOString(), MN = Object.keys(MONTH_MAP);
+        var prev = GT.written[y] || { cells: {}, rep: {} }, next = { cells: {}, rep: {} }, del = firebase.firestore.FieldValue.delete();
+        var target = {};
         Object.keys(p.cells).forEach(function (iso) {
             if (iso.slice(0, 4) !== String(y)) return;
-            var mi = Number(iso.slice(5, 7)) - 1, dn = Number(iso.slice(8, 10)), mName = Object.keys(MONTH_MAP)[mi];
+            var mi = Number(iso.slice(5, 7)) - 1, dn = Number(iso.slice(8, 10));
             ids.forEach(function (id) {
                 var c = p.cells[iso][id]; if (!c || c.off || (!c.v && !c.sub)) return;
-                months[mi][id + '__' + mName + '-' + dn] = { v: c.sub ? (c.v || '') : c.v, subV: c.sub || '' };
+                target[mi + '|' + id + '__' + MN[mi] + '-' + dn] = { v: c.sub ? (c.v || '') : c.v, subV: c.sub || '' };
             });
         });
-        var batch = db.batch();
-        months.forEach(function (cells, mi) { batch.set(cfgRef(monthDocName(y, mi)), { cells: cells, updatedAt: now, source: 'generatore' }); });
+        var docs = await Promise.all(MN.map(function (_, mi) { return cfgRef(monthDocName(y, mi)).get(); }));
+        var batch = db.batch(), writes = 0;
+        docs.forEach(function (d, mi) {
+            var cur = d.exists ? (d.data().cells || {}) : {}, out = {}, keys = {}, legacy = prev.legacy && d.exists && d.data().source === 'generatore';
+            Object.keys(target).forEach(function (k) { if (k.indexOf(mi + '|') === 0) keys[k.slice(k.indexOf('|') + 1)] = 1; });
+            Object.keys(prev.cells).forEach(function (k) { if (k.indexOf(mi + '|') === 0) keys[k.slice(k.indexOf('|') + 1)] = 1; });
+            Object.keys(keys).forEach(function (k) {
+                var t = target[mi + '|' + k], c = cur[k], pv = prev.cells[mi + '|' + k];
+                var mine = !c || legacy || (pv ? sameCell(c, pv) : sameCell(c, t));
+                if (!mine) return;                                   // cambiata a mano: si lascia
+                if (t) { next.cells[mi + '|' + k] = t; if (!sameCell(c, t)) out[k] = t; }
+                else if (c) out[k] = del;
+            });
+            if (Object.keys(out).length) { batch.set(cfgRef(monthDocName(y, mi)), { cells: out, updatedAt: now }, { merge: true }); writes++; }
+        });
+        // reperibilità dei giorni generati
+        var saved = (typeof repTurniSaved !== 'undefined' && repTurniSaved) || {}, repOut = {};
+        var repKeys = {}; Object.keys(p.rep || {}).forEach(function (d) { repKeys[d] = 1; }); Object.keys(prev.rep).forEach(function (d) { repKeys[d] = 1; });
+        Object.keys(repKeys).forEach(function (d) {
+            if (d.slice(0, 4) !== String(y) || d < p.firstGenerated) return;
+            var t = p.rep[d], c = saved[d], pv = prev.rep[d];
+            if (c && (pv ? c !== pv : c !== t)) return;
+            if (t) { next.rep[d] = t; if (c !== t) repOut[d] = t; } else if (c) repOut[d] = del;
+        });
+        if (Object.keys(repOut).length) { batch.set(repDocRef(), { turni: repOut, updatedAt: now }, { merge: true }); writes++; }
         var names = {}; p.ops.forEach(function (o) { if (o.name && o.name !== o.id) names[o.id] = o.name; });
         batch.set(cfgRef('anno_' + y), { year: y, baseNames: ids, contract: (operatorConfig && operatorConfig.contract) || {}, allow: {}, removed: {}, nameOverrides: Object.assign({}, typeof nameOverrides !== 'undefined' ? nameOverrides : {}, names), generated: true, model: (p.opts && p.opts.model) || '7h12', generatedAt: now });
-        // reperibilità dei giorni generati (quelle dei giorni già compilati restano come sono)
-        var rep = {}; Object.keys(p.rep || {}).forEach(function (iso) { if (iso.slice(0, 4) === String(y) && iso >= p.firstGenerated) rep[iso] = p.rep[iso]; });
-        if (Object.keys(rep).length) batch.set(repDocRef(), { turni: rep, updatedAt: now }, { merge: true });
+        batch.set(planDoc(y), { written: JSON.stringify(next) }, { merge: true });
         await batch.commit();
+        GT.written[y] = next;
         rememberYear(p);
     }
     async function removePlanFromCalendar(p) {
-        var y = p.year, batch = db.batch(), del = firebase.firestore.FieldValue.delete(), rep = {};
-        for (var m = 0; m < 12; m++) batch.delete(cfgRef(monthDocName(y, m)));
-        batch.delete(cfgRef('anno_' + y));
-        Object.keys(p.rep || {}).forEach(function (iso) { if (iso.slice(0, 4) === String(y) && iso >= p.firstGenerated) rep[iso] = del; });
+        var y = p.year, prev = GT.written[y] || { cells: {}, rep: {} }, del = firebase.firestore.FieldValue.delete(), MN = Object.keys(MONTH_MAP);
+        var docs = await Promise.all(MN.map(function (_, mi) { return cfgRef(monthDocName(y, mi)).get(); }));
+        var batch = db.batch();
+        docs.forEach(function (d, mi) {
+            if (!d.exists) return;
+            var cur = d.data().cells || {}, out = {}, legacy = prev.legacy && d.data().source === 'generatore';
+            Object.keys(cur).forEach(function (k) { var pv = prev.cells[mi + '|' + k]; if (legacy || (pv && sameCell(cur[k], pv))) out[k] = del; });
+            if (Object.keys(out).length) batch.set(cfgRef(monthDocName(y, mi)), { cells: out }, { merge: true });
+        });
+        var saved = (typeof repTurniSaved !== 'undefined' && repTurniSaved) || {}, rep = {};
+        Object.keys(prev.rep).forEach(function (d) { if (saved[d] === prev.rep[d]) rep[d] = del; });
         if (Object.keys(rep).length) batch.set(repDocRef(), { turni: rep }, { merge: true });
+        batch.delete(cfgRef('anno_' + y));
         await batch.commit();
+        GT.written[y] = { cells: {}, rep: {} };
         GT.calYears = GT.calYears.filter(function (x) { return x !== y; }); delete GT.covMap[y];
     }
     async function loadCalYears() {
-        var base = typeof activeYear !== 'undefined' ? activeYear : SHIFT_YEAR;
+        var base = typeof realActiveYear !== 'undefined' ? realActiveYear : SHIFT_YEAR;
         for (var y = base + 1; y <= base + 3; y++) {
             try {
                 var d = await cfgRef('anno_' + y).get(); if (!d.exists || !d.data().generated) continue;
@@ -1223,11 +1266,24 @@
         var p = await loadPlan(year);
         if (!p) { toast('Prima genera i turni del ' + year + '.', true); return; }
         if (GT.calYears.indexOf(year) < 0) await writePlanToCalendar(p);
-        if (typeof closeCoordConsole === 'function') closeCoordConsole();
-        await switchToYear(year);
         var target = iso || p.firstGenerated;
-        setTimeout(function () { try { var rr = repRowOfDate(target); var td = rr && document.querySelector('td[data-row="' + rr + '"]'); if (td) td.scrollIntoView({ block: iso ? 'center' : 'start' }); } catch (e) {} }, 700);
+        if (typeof activeYear !== 'undefined' && activeYear === year && !isViewingArchive()) {
+            if (typeof closeCoordConsole === 'function') closeCoordConsole();
+            setTimeout(function () { gtScrollTo(target); }, 400);
+            return;
+        }
+        try { sessionStorage.setItem('gt_scroll', target); } catch (e) {}
+        gtSetWorkYear(year);
     };
+    function gtScrollTo(iso) { try { var rr = repRowOfDate(iso); var td = rr && document.querySelector('td[data-row="' + rr + '"]'); if (td) td.scrollIntoView({ block: 'center' }); } catch (e) {} }
+    async function afterBoot() {
+        await loadCalYears();
+        if (typeof updateYearUi === 'function') updateYearUi();
+        var rw = null, sc = null; try { rw = sessionStorage.getItem('gt_rewrite'); sc = sessionStorage.getItem('gt_scroll'); sessionStorage.removeItem('gt_rewrite'); sessionStorage.removeItem('gt_scroll'); } catch (e) {}
+        if (rw) { var p = await loadPlan(+rw); if (p) { try { await writePlanToCalendar(p); } catch (e) { console.error(e); } } if (typeof dataSourceMode !== 'undefined' && dataSourceMode === 'firebase' && activeYear !== +rw) { try { localStorage.setItem('gt_work_year', rw); } catch (e) {} location.reload(); return; } }
+        if (typeof renderTable === 'function' && finalData && finalData.length) renderTable();
+        if (sc) setTimeout(function () { gtScrollTo(sc); }, 800);
+    }
     // "copertura turno di …" sulle caselle dell'anno generato
     function decorateCov() {
         try {
@@ -1249,7 +1305,8 @@
         CC_SECTIONS.richiestetest = { title: 'Richieste dal portale', sub: 'Ferie, permessi e cambi mandati dal portale richieste (freccia a destra dello schermo): gestiscili a mano o in automatico.' };
     }
     loadOpts();
-    function startListen() { if (typeof fbReady !== 'undefined' && fbReady && typeof db !== 'undefined' && db) { listenReqs(); loadCalYears().then(function () { if (typeof updateYearUi === 'function') updateYearUi(); }); } else setTimeout(startListen, 1500); }
+    function waitBoot() { if (typeof appBooted !== 'undefined' && appBooted) afterBoot(); else setTimeout(waitBoot, 700); }
+    function startListen() { if (typeof fbReady !== 'undefined' && fbReady && typeof db !== 'undefined' && db) { listenReqs(); waitBoot(); } else setTimeout(startListen, 1500); }
     startListen();
 
     // ── stile ──

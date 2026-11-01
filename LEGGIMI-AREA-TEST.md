@@ -34,8 +34,10 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   turno ↔ diurno ogni 5 settimane, reperibilità non ravvicinate, festivi equi,
   2 autisti di mattina e pomeriggio e 1 o 2 di notte, 36 h settimanali.
   Il piano si salva nel Firebase finto (`test_generatore/<anno>`) e viene scritto anche
-  dove l'app tiene gli anni (`turni_<anno>-MM` e `anno_<anno>`): l'anno generato si apre
-  dal menu › Calendario › Anni, in sola lettura come gli anni passati.
+  dove l'app tiene gli anni (`turni_<anno>-MM` e `anno_<anno>`). Da menu › Anno si sceglie
+  l'anno su cui lavorare: il 2027 generato si apre come anno normale, modificabile
+  (la barra arancione riporta al 2026). La prima volta i turni passano da turni.xlsx al
+  Firebase finto, come a capodanno. Le caselle cambiate a mano restano anche se si rigenera.
   Orari dei diurnisti nel calendario secondo il modello: 6h 07–13 / 13–19,
   7h12 06:30–13:42 / 13:15–20:27. Operatori: si aggiungono (inizio, durata in settimane
   o mesi, affiancamento prima di turni e reperibilità) e si tolgono da una data;
