@@ -230,6 +230,30 @@
             });
         });
         days.forEach(function (iso) { ids.forEach(function (id) { if (role[iso][id] === 't') turnDays[id]++; else if (role[iso][id] === 'd') diurnoDays[id]++; }); });
+        // ── 3b. turnisti a 12 h: G › N › S › R › R fa 24 h ogni 5 giorni (33 h 36 a settimana). Per arrivare
+        // a 36 h manca un turno di giorno (12 h) ogni 35 giorni in turno: va sul secondo riposo del ciclo
+        // (mai il giorno dopo lo smonto), nel giorno in cui ci sono meno diurnisti disponibili.
+        if (opts.turni === '12h') {
+            var extraG = {};
+            var availD = function (iso) { var n = 0; ids.forEach(function (x) { if (role[iso][x] === 'd' && inSvc(x, iso) && !isAbs(iso, x)) n++; }); return n; };
+            ids.forEach(function (id) {
+                var blocks = [], cur = null;
+                days.forEach(function (iso) { if (iso >= X && role[iso][id] === 't') { if (!cur) { cur = []; blocks.push(cur); } cur.push(iso); } else cur = null; });
+                blocks.forEach(function (b) {
+                    var n = Math.round(b.length / 35); if (!n) return;
+                    var cands = b.filter(function (iso) { var c = G[iso][id]; return c && c.gen && c.v === 'R' && vOf(addDays(iso, -1), id) === 'R' && vOf(addDays(iso, 1), id) === 'G' && !isAbs(iso, id); });
+                    for (var part = 0; part < n; part++) {
+                        var lo = b[Math.floor(part * b.length / n)], hi = b[Math.floor((part + 1) * b.length / n) - 1], best = null, bestS = Infinity;
+                        cands.forEach(function (iso) {
+                            if (iso < lo || iso > hi) return;
+                            var g = dow(iso), sc = availD(iso) * 10 + (extraG[iso] || 0) * 100 + (g === 0 || g === 6 || fest(iso) ? -3 : 0);
+                            if (sc < bestS) { bestS = sc; best = iso; }
+                        });
+                        if (best) { put(best, id, 'G', { note: 'turno in più per le 36 h' }); extraG[best] = (extraG[best] || 0) + 1; }
+                    }
+                });
+            });
+        }
         function coverName(iso, shift) { var c = covers.filter(function (x) { return x.iso === iso && x.shift === shift && !x.done; })[0]; if (c) { c.done = true; return nameOf[c.absent]; } return ''; }
 
         // ── 4. diurnisti, settimana per settimana ──
@@ -440,6 +464,8 @@
             c.sort(function (a, b) {
                 if ((a.next > 0) !== (b.next > 0)) return a.next > 0 ? -1 : 1;
                 if (a.gapOk !== b.gapOk) return a.gapOk ? -1 : 1;
+                // domeniche e festivi: se uno ne ha già almeno uno in più, conta l'equità prima del turno
+                if (R.eqRep && f && Math.abs(rateF(a.id) - rateF(b.id)) * Math.max(repSt[a.id].elF, repSt[b.id].elF) >= 1) return rateF(a.id) - rateF(b.id);
                 if (a.tier !== b.tier) return a.tier - b.tier;
                 // ciclo M › P › N: la reperibilità va al turnista di mattina, che il giorno dopo fa il pomeriggio
                 // (a rotazione tocca a tutti i turnisti; se uno ne ha già troppe rispetto agli altri passa a chi ne ha meno)
@@ -968,7 +994,7 @@
     var TURNI_INFO = {
         pmnsr: 'quello di oggi · 10 h 20 fra pomeriggio e mattina',
         mpnsr: 'in avanti · reperibilità dal mattino al pomeriggio',
-        '12h': 'giorno 08–20, notte 20–08 · 2 riposi ogni 5 giorni'
+        '12h': 'giorno 08–20, notte 20–08 · 2 riposi ogni 5 giorni, 1 giorno in più ogni 5 settimane per le 36 h'
     };
     function seg(opt, items) {
         var o = GT.opts;
@@ -977,7 +1003,7 @@
     function ruleRow(r) {
         var o = GT.opts, on = r.fixed ? true : !!o.rules[r.k], body = r.d || '';
         if (r.fixed === 'nights') body = 'Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte:' + seg('nights', [[1, '1 autista'], [2, '2 autisti']]);
-        if (r.fixed === 'hours') body = 'Turnisti: ' + TURNI[o.turni].name + ' (' + hm(TURNI[o.turni].cycle.reduce(function (a, c) { return a + (TURNI[o.turni].min[c] || 0); }, 0)) + ' ogni 5 giorni). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + '. Le assenze contano come giornata di contratto.';
+        if (r.fixed === 'hours') body = 'Turnisti: ' + TURNI[o.turni].name + ' (' + hm(TURNI[o.turni].cycle.reduce(function (a, c) { return a + (TURNI[o.turni].min[c] || 0); }, 0)) + ' ogni 5 giorni' + (o.turni === '12h' ? ', più un giorno da 12 h ogni 5 settimane' : '') + '). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + '. Le assenze contano come giornata di contratto.';
         if (r.fixed === 'model') body = seg('model', Object.keys(MODELS).map(function (k) { var m = MODELS[k]; return [k, '<b>' + m.label + '</b><small>' + m.workDays + ' giorni · ' + m.rests + (m.rests > 1 ? ' riposi' : ' riposo') + ' a settimana</small><small>' + m.m + ' · ' + m.p + '</small>']; }));
         if (r.fixed === 'turni') body = seg('turni', Object.keys(TURNI).map(function (k) { var t = TURNI[k]; return [k, '<b>' + t.label + '</b><small>' + TURNI_INFO[k] + '</small>']; }));
         if (r.ferie) body = 'Al massimo <input type="number" min="1" max="5" value="' + o.maxFerie + '" class="gt-num" onchange="GT.setOpt(\'maxFerie\',Math.max(1,Math.min(5,+this.value||2)))"> persone in ferie nello stesso giorno. Se una richiesta supera il limite te lo chiedo prima.';
@@ -1545,7 +1571,7 @@
             '<div class="gt-q-sec">Turnisti</div>' +
             qItem(o.turni === 'pmnsr', 'repeat', 'Pomeriggio › mattina › notte', 'P M N S R, quello di oggi', "GT.quick('turni','pmnsr')") +
             qItem(o.turni === 'mpnsr', 'repeat', 'Mattina › pomeriggio › notte', 'M P N S R · reperibilità dal mattino al pomeriggio', "GT.quick('turni','mpnsr')") +
-            qItem(o.turni === '12h', 'repeat', 'Turni da 12 ore', 'giorno 08–20 › notte 20–08 › smonto › 2 riposi', "GT.quick('turni','12h')") +
+            qItem(o.turni === '12h', 'repeat', 'Turni da 12 ore', 'giorno 08–20 › notte 20–08 › smonto › 2 riposi · 1 giorno in più ogni 5 settimane per le 36 h', "GT.quick('turni','12h')") +
             '<div class="gt-q-sec">Notte e riposi</div>' +
             qItem(o.nights === 2, 'nights_stay', 'Secondo autista di notte', o.nights === 2 ? 'tocca per tornare a 1' : 'oggi 1 autista', "GT.quick('nights'," + (o.nights === 2 ? 1 : 2) + ")") +
             qItem(!!R.friRest, 'event_upcoming', 'Riposi divisi anche sul venerdì', R.friRest ? 'tocca per tenerli solo sabato e domenica' : 'non tutti di domenica', "GT.quick('friRest')") +
