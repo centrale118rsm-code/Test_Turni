@@ -1012,7 +1012,7 @@
             '<div class="gt-year">' + years.map(function (y) { return '<button class="' + (o.year === y ? 'on' : '') + '" onclick="GT.setYear(' + y + ')">' + y + '</button>'; }).join('') + '</div></div>' +
             '<div class="gt-pre"><span class="msym">' + (pre.days ? 'event_upcoming' : 'info') + '</span><span>' + (pre.days ? 'Nel calendario il ' + o.year + ' ha già <b>' + pre.days + ' giorni compilati</b> (fino al ' + fmtDay(pre.last) + '): il generatore parte da lì e li lascia com\u2019erano.' : 'Nel calendario il ' + o.year + ' è vuoto: il generatore parte dagli ultimi turni dell\u2019anno prima, se ci sono.') + '</span></div>' +
             '<div class="gt-actions"><button class="cc-btn primary" onclick="GT.generate()" ' + (GT.busy ? 'disabled' : '') + '><span class="msym">edit_calendar</span>' + (GT.plan ? 'Rigenera il ' : 'Genera il ') + o.year + '</button>' +
-            (GT.plan ? '<button class="cc-btn" onclick="GT.goCalendar()"><span class="msym">calendar_month</span>Vai al calendario generato</button><button class="cc-btn danger" onclick="GT.clear()"><span class="msym">delete</span>Cancella piano</button>' : '') +
+            (GT.plan ? '<button class="cc-btn primary" onclick="GT.showInCalendar(' + o.year + ')"><span class="msym">calendar_month</span>Apri il ' + o.year + ' nel calendario</button><button class="cc-btn" onclick="GT.goCalendar()"><span class="msym">table_view</span>Anteprima qui sotto</button><button class="cc-btn danger" onclick="GT.clear()"><span class="msym">delete</span>Cancella piano</button>' : '') +
             '<button class="cc-btn ghost" onclick="ccGo(\'richiestetest\')"><span class="msym">inventory_2</span>Richieste dal portale</button></div>' +
             '</div></div>' +
             '<div class="cc-panel"><div class="cc-panel-head"><h3>Regole del generatore</h3><span class="cc-hint">valgono per ogni generazione · si attivano e disattivano qui</span></div><div class="gt-rules">' +
@@ -1118,7 +1118,7 @@
     function reqView(id) {
         var r = GT.reqs.filter(function (x) { return x.id === id; })[0];
         var d = r && (r.repDate || r.dateFrom); if (d) { GT.opts.year = Number(d.slice(0, 4)); GT.month = Number(d.slice(5, 7)) - 1; saveOpts(); }
-        ccGo('generazione'); setTimeout(GT.goCalendar, 80);
+        GT.showInCalendar(GT.opts.year).then(function () { if (d) setTimeout(function () { try { var r = repRowOfDate(d); var td = r && document.querySelector('td[data-row="' + r + '"]'); if (td) td.scrollIntoView({ block: 'center' }); } catch (e) {} }, 500); });
     }
 
     // ── azioni ──
@@ -1143,8 +1143,52 @@
     GT.setFilter = function (f) { GT.filter = f; renderReqs(); };
     GT.reqHandle = reqHandle; GT.reqUndo = reqUndo; GT.reqView = reqView;
 
+    // ── l'anno generato nel calendario principale (sola lettura, come gli anni passati) ──
+    GT.viewing = null;
+    GT.showInCalendar = async function (year) {
+        year = year || GT.opts.year;
+        var p = await loadPlan(year);
+        if (!p) { toast('Prima genera i turni del ' + year + '.', true); return; }
+        if (typeof coordEditModeActive !== 'undefined' && coordEditModeActive) { var ok = await exitCoordEdit(true); if (!ok) return; }
+        if (!isViewingArchive()) ccArchiveBackup = { finalData: finalData, rawFinalData: rawFinalData, drivers: drivers, operatorConfig: operatorConfig, excelParsedData: excelParsedData, SHIFT_YEAR: SHIFT_YEAR, selectedDrivers: selectedDrivers };
+        var names = p.ops.map(function (o) { return o.id; });
+        setShiftYear(year);
+        var data = buildBlankYearData(year, names, 0);
+        for (var r = 1; r < data.length; r++) {
+            var mi = MONTH_MAP[data[r][0].v], iso = year + '-' + pad(mi + 1) + '-' + pad(data[r][1].v), row = p.cells[iso] || {};
+            names.forEach(function (id, i) {
+                var c = row[id]; if (!c || c.off) return;
+                var v = c.sub ? (c.v || '') : c.v;
+                if (p.rep[iso] === id) v = (v || (c.sub ? '' : 'M')) + '/R';
+                data[r][i + 3] = { v: v, subV: c.sub || '', supV: '', gtCov: c.cov || '' };
+            });
+        }
+        excelParsedData = data;
+        rawFinalData = JSON.parse(JSON.stringify(data));
+        finalData = JSON.parse(JSON.stringify(data));
+        drivers = p.ops.map(function (o, i) { return { name: o.name, idx: i + 3, originalName: o.id, virtual: false, hidden: false }; });
+        operatorConfig = normalizeOperatorConfig({ contract: {}, allow: {}, baseNames: names });
+        selectedDrivers = new Set();
+        GT.viewing = year;
+        if (typeof closeCoordConsole === 'function') closeCoordConsole();
+        refreshAfterYearSwitch();
+        var firstGen = Object.keys(p.cells).sort().find(function (iso) { var row = p.cells[iso]; return Object.keys(row).some(function (k) { return row[k] && row[k].gen; }); });
+        setTimeout(function () { try { var rr = firstGen ? repRowOfDate(firstGen) : 1; var td = document.querySelector('td[data-row="' + (rr || 1) + '"]'); if (td) td.scrollIntoView({ block: 'start' }); else scrollToToday(); } catch (e) {} }, 600);
+        toast('Turni ' + year + ' generati: li vedi nel calendario. Tocca la barra in alto per tornare al ' + activeYear + '.');
+    };
+    GT.openCalendarPicker = async function () {
+        if (typeof closeMenu === 'function') try { closeMenu(); } catch (e) {}
+        var years = [], base = isViewingArchive() && ccArchiveBackup ? ccArchiveBackup.SHIFT_YEAR : SHIFT_YEAR;
+        for (var y = base; y <= base + 2; y++) { try { var d = await planDoc(y).get(); if (d.exists) years.push(y); } catch (e) {} }
+        if (!years.length) { alert('Nessun anno generato. Generalo da Area coordinatore › Generazione turni.'); return; }
+        var choice = await ccDialog('Turni generati (area test)', 'Scegli l’anno da aprire nel calendario. Si vede in sola lettura; per cambiarlo usa Generazione turni.',
+            years.map(function (y) { return { label: String(y), kind: 'primary', value: y }; }).concat([{ label: 'Chiudi', kind: 'ghost', value: null }]));
+        if (choice) GT.showInCalendar(choice);
+    };
+    function leaveGenView() { if (GT.viewing && typeof returnToActiveYear === 'function') returnToActiveYear(); }
+
     // ── aggancio alla console ──
-    window.GT_RENDER = { generazione: function () { renderGen(); }, richiestetest: function () { renderReqs(); } };
+    window.GT_RENDER = { generazione: function () { leaveGenView(); renderGen(); }, richiestetest: function () { leaveGenView(); renderReqs(); } };
     if (typeof CC_SECTIONS !== 'undefined') {
         CC_SECTIONS.generazione = { title: 'Generazione turni', sub: 'Crea i turni di un anno intero seguendo regole fisse, partendo da quelli già compilati. Solo area test.' };
         CC_SECTIONS.richiestetest = { title: 'Richieste dal portale', sub: 'Ferie, permessi e cambi mandati dal portale di prova: gestiscili a mano o in automatico.' };
@@ -1244,6 +1288,7 @@
         '.gt-n{width:80px}.gt-unit{width:auto;min-width:120px}.gt-chk{display:inline-flex;gap:6px;align-items:center;font-weight:400}',
         '.gt-opprev{margin:0;font-size:13px;padding:10px 12px;border-radius:6px;background:var(--cc-surface-2)}',
         '.gt .gt-cal tbody td.gt-c.off{background:repeating-linear-gradient(-45deg,var(--cc-surface-2) 0 6px,transparent 6px 12px);color:var(--cc-muted);cursor:default}.gt-c.off small{font-size:9.5px}',
+        '.gt-cov-tag{position:absolute;left:2px;right:2px;bottom:2px;font:700 8.5px/1.1 sans-serif;background:#fff7d6;color:#7a4b00;border-radius:3px;padding:1px 2px;text-align:center;white-space:normal;z-index:2}',
         '.gt-reqs li{align-items:flex-start;flex-wrap:wrap}.gt-res{display:block;margin-top:6px;padding:6px 8px;border-left:3px solid var(--cc-accent);background:var(--cc-surface-2);border-radius:0 4px 4px 0}',
         '@media (max-width:640px){.gt-rules{grid-template-columns:1fr;padding:10px}.gt .gt-cal tbody td.gt-c{min-width:58px}.gt-year button{padding:8px 12px}}'
     ].join('\n');
