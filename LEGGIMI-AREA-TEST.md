@@ -21,3 +21,22 @@ Dalla console del browser:
 `__testFirebase.importJSON({...})` ne carica di nuovi.
 
 Copia fatta da PROVA-MODIFICHE-TURNI al commit `dc027e2`.
+
+## Generazione turni e portale richieste (solo area test)
+
+Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
+
+- **Generazione turni** (`generatore-turni.js`): sceglie l'anno (es. 2027), parte dai
+  turni già compilati nel calendario (gennaio 2027 compreso) e riempie il resto seguendo
+  le regole scritte nella stessa finestra, ognuna attivabile o disattivabile:
+  equità fra operatori, equità reperibilità, modello diurnisti 7h12 (2 riposi) o 6h
+  (1 riposo), riposi nel weekend, mattina prima / pomeriggio dopo il riposo, rotazione
+  turno ↔ diurno ogni 5 settimane, reperibilità non ravvicinate, festivi equi,
+  2 autisti di mattina e pomeriggio e 1 o 2 di notte, 36 h settimanali.
+  Il piano si salva solo nel Firebase finto (`test_generatore/<anno>`): il calendario
+  dell'app non viene toccato. Gestione operatori presente ma bloccata.
+- **Richieste dal portale**: le richieste mandate da `portale-richieste.html` (copia
+  finta del portale Richieste A.S. 118) arrivano qui. "In automatico" segna l'assenza
+  e trova chi la copre; nel calendario generato compare "copertura turno di …".
+  "Inserisci manualmente" segna solo l'assenza; i turni scoperti si sistemano toccando
+  la casella.
