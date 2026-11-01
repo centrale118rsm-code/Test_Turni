@@ -5655,13 +5655,13 @@
             { id:'me', icon:'person', label:'La mia pagina', desc: (userIdentity && userIdentity !== 'Ospite') ? 'Prossimi turni, ore, assenze, reperibilit\u00e0' : 'Scegli prima chi sei', color:'#1d4ed8', run: () => openMyPage() },
             { id:'note', icon:'sticky_note_2', label:'Note e appuntamenti', desc:'Note sui giorni per i colleghi', color:'#7c3aed', run: () => asOpenNotesOverview() },
             { group:'Calendario' },
-            { id:'cal', icon:'calendar_month', label:'Calendario', desc:'Oggi, mesi, operatori' + (hasYears ? ', anni passati' : ''), color: MN_COLORS.cal, children: [
+            { id:'cal', icon:'calendar_month', label:'Calendario', desc:'Oggi, mesi, operatori', color: MN_COLORS.cal, children: [
                 { id:'today', icon:'today', label:'Vai a oggi', desc:'Torna al giorno corrente', color: MN_COLORS.cal, run: () => scrollToToday() },
                 { id:'month', icon:'event', label:'Vai a un mese', desc:'Scegli il mese da vedere', color: MN_COLORS.cal, run: () => toggleMonthDropdown() },
                 { id:'filter', icon:'groups', label:'Filtra operatori', desc:'Mostra solo alcuni colleghi', color: MN_COLORS.cal, run: () => toggleDriverFilterDropdown() },
                 { id:'print', icon:'print', label:'Stampa del mese', desc:'PDF dei turni per la bacheca', color: MN_COLORS.cal, run: () => printMonthPick() },
-                hasYears ? { id:'years', icon:'history', label: gtYears().length ? 'Anni' : 'Anni passati', desc: gtYears().length ? 'Anni passati e anni generati (sola lettura)' : 'Consulta gli anni archiviati (sola lettura)', color: MN_COLORS.cal, run: () => openYearPicker() } : null
             ] },
+            { id:'years', icon:'date_range', label:`Anno ${SHIFT_YEAR}${SHIFT_YEAR !== activeYear ? ' (sola lettura)' : ''}`, desc: hasYears ? 'Cambia anno: ' + [activeYear].concat(archivedYears, gtYears()).filter((y, i, a) => a.indexOf(y) === i).sort().join(', ') : 'Per ora c\u2019è solo il ' + activeYear, color: MN_COLORS.cal, run: () => openYearPicker() },
             { id:'view', icon: calOverview ? 'view_agenda' : 'grid_view', label: calOverview ? 'Vista dettagliata' : 'Vista d’insieme', desc: calOverview ? 'Torna al calendario giorno per giorno' : 'Tutto l’anno a colpo d’occhio', color: MN_COLORS.cal, run: () => toggleCalView() },
             { id:'ferie', icon:'beach_access', label:'Ferie e permessi', desc:'Quando prenderli: giorni e periodi consigliati', color:'#16a34a', run: () => openFerieAdvice() },
             { id:'ore', icon:'query_stats', label:'Conteggio orario', desc:'Ore lavorate e saldo rispetto al contratto', color: MN_COLORS.ore, run: () => openHoursModal() },
@@ -11833,7 +11833,7 @@
         const m = document.getElementById('menu-dropdown'); if(m && m.style.display === 'flex') toggleMenu();
         const shown = SHIFT_YEAR;
         const gy = gtYears().filter(y => y !== activeYear);
-        const years = gy.slice().sort((a, b) => b - a).concat([activeYear], archivedYears.filter(y => y !== activeYear && !gy.includes(y)).sort((a, b) => b - a));
+        const years = [activeYear].concat(archivedYears, gy).filter((y, i, a) => a.indexOf(y) === i).sort((a, b) => a - b);
         const choice = await ccDialog('Anni', 'Scegli l’anno da consultare. Gli anni diversi da quello attuale sono in sola lettura.',
             years.map(y => ({ label: `${y}${y === activeYear ? ' · attuale' : ''}${gy.includes(y) ? ' · generato' : ''}${y === shown ? ' ✓' : ''}`, kind: y === activeYear ? 'primary' : '', value: String(y) })).concat([{ label:'Chiudi', kind:'ghost', value:null }]));
         if(choice) switchToYear(choice);
