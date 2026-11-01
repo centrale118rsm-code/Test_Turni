@@ -915,7 +915,9 @@
             });
         }
         try { var t = repData().tit; Object.keys(t).forEach(function (iso) { if (t[iso]) histRep[iso] = t[iso]; }); } catch (e) {}
-        var all = ops.map(function (o) { return { id: o.id, name: o.name }; }).concat((cfg.added || []).map(function (a) { return Object.assign({ added: true }, a); }));
+        // colonne messe dal generatore (genOpCols): non sono operatori dell'app, contano solo come aggiunti, e solo finché ci sono
+        var addedIds = {}; (cfg.added || []).concat((GT.opCols || []).map(function (id) { return { id: id }; })).forEach(function (a) { addedIds[a.id] = 1; });
+        var all = ops.filter(function (o) { return !addedIds[o.id]; }).map(function (o) { return { id: o.id, name: o.name }; }).concat((cfg.added || []).map(function (a) { return Object.assign({ added: true }, a); }));
         all.forEach(function (o) { if (cfg.removed && cfg.removed[o.id]) o.to = o.to && o.to < cfg.removed[o.id] ? o.to : cfg.removed[o.id]; });
         return { ops: all, hist: hist, histRep: histRep };
     }
@@ -1099,7 +1101,7 @@
                     (removed ? '<button class="gt-op-x" title="Rimetti" onclick="GT.opRestore(\'' + h(o.id) + '\')"><span class="msym">undo</span></button>' : '<button class="gt-op-x" title="Togli" onclick="GT.opRemove(\'' + h(o.id) + '\')"><span class="msym">close</span></button>') + '</span>';
             }).join('') + '</div>' +
             (GT.opForm ? opsFormHtml() : '<div class="gt-ops-actions"><button class="cc-btn primary" onclick="GT.opAdd()"><span class="msym">person_add</span>Aggiungi operatore</button></div>') +
-            '<p class="cc-note">Vale solo per il generatore dell’area test: il calendario dell’app e la sua lista operatori non cambiano. Dopo ogni modifica i turni del ' + GT.opts.year + ' vengono rigenerati dal giorno interessato in poi.</p></div></div>';
+            '<p class="cc-note">Vale solo per l’area test: gli operatori aggiunti compaiono come colonne nel calendario del ' + GT.opts.year + ', mentre la lista operatori dell’app non cambia. Dopo ogni modifica i turni del ' + GT.opts.year + ' vengono rigenerati dal giorno interessato in poi.</p></div></div>';
     }
     function opVals() {
         var g = function (id) { var e = document.getElementById(id); return e ? (e.type === 'checkbox' ? e.checked : e.value) : ''; };
@@ -1121,7 +1123,7 @@
         var y = Number(fromIso.slice(0, 4));
         if (y === GT.opts.year && GT.plan && GT.plan.year === y) { await gtGenerate(fromIso > y + '-01-01' ? fromIso : null); GT.month = Number(fromIso.slice(5, 7)) - 1; }
         else if (y < GT.opts.year && GT.plan) { await gtGenerate(null); }
-        toast(msg); keepScroll(renderGen);
+        syncOpCols(); toast(msg); keepScroll(renderGen);
     }
     GT.opAddSave = async function () {
         var v = opVals();
@@ -1534,6 +1536,7 @@
     }
     async function afterBoot() {
         quickBar();
+        loadOpsCfg().then(syncOpCols);
         await loadCalYears();
         try { await new Promise(function (r) { setTimeout(r, 1500); }); var nOrph = await cleanOrphanReps((typeof realActiveYear !== 'undefined' ? realActiveYear : SHIFT_YEAR) + 1); if (nOrph) console.log('Tolte ' + nOrph + ' reperibilità senza turno'); } catch (e) { console.error(e); }
         if (typeof updateYearUi === 'function') updateYearUi();
@@ -1543,7 +1546,7 @@
         if (sc) setTimeout(function () { gtScrollTo(sc); }, 800);
         var tt = null; try { tt = sessionStorage.getItem('gt_toast'); sessionStorage.removeItem('gt_toast'); } catch (e) {}
         if (tt) setTimeout(function () { toast(tt); }, 1200);
-        loadSim(GT.opts.year).then(quickBar);
+        loadSim(GT.opts.year).then(loadOpsCfg).then(function () { syncOpCols(); quickBar(); });
     }
     // "copertura turno di …" sulle caselle dell'anno generato
     function decorateCov() {
@@ -1555,6 +1558,41 @@
                 if (r && c >= 3 && finalData[r][c]) finalData[r][c].gtCov = map[k];
             });
         } catch (e) {}
+    }
+    // operatori aggiunti nel generatore (dal menu rapido o dal riquadro Operatori): nell'anno generato
+    // dell'area test compaiono come colonne del calendario, senza toccare la lista operatori dell'app
+    function genOpCols() {
+        var y = typeof SHIFT_YEAR !== 'undefined' ? SHIFT_YEAR : 0;
+        if (!GT.opsCfg || typeof realActiveYear === 'undefined' || !(y > realActiveYear)) return [];
+        var a = y + '-01-01', b = y + '-12-31', rem = GT.opsCfg.removed || {};
+        return (GT.opsCfg.added || []).filter(function (o) {
+            var to = o.to; if (rem[o.id] && (!to || rem[o.id] < to)) to = rem[o.id];
+            return (!o.from || o.from <= b) && (!to || to >= a);
+        }).map(function (o) { return o.id; });
+    }
+    GT.opCols = [];
+    if (typeof injectVirtualOperators === 'function') {
+        var _ivo = injectVirtualOperators;
+        injectVirtualOperators = function (data) {
+            data = _ivo.apply(this, arguments);
+            var head = data && data[0], put = [];
+            if (head) genOpCols().forEach(function (id) {
+                if (head.indexOf(id) >= 0) return;
+                head.push(id); put.push(id);
+                for (var r = 1; r < data.length; r++) data[r].push({ v: '', subV: '', supV: '' });
+            });
+            GT.opCols = put;
+            return data;
+        };
+    }
+    // rifà le colonne quando gli operatori aggiunti cambiano; true se ha ridisegnato il calendario
+    function syncOpCols() {
+        try {
+            if (typeof rebuildDataFromExcel !== 'function' || !excelParsedData.length || !finalData.length) return false;
+            if (genOpCols().slice().sort().join('|') === GT.opCols.slice().sort().join('|')) return false;
+            rebuildDataFromExcel(); refreshAfterOperatorChange();
+            return true;
+        } catch (e) { console.error(e); return false; }
     }
     if (typeof renderTable === 'function') { var _rt = renderTable; renderTable = function () { applyYearView(); decorateCov(); return _rt.apply(this, arguments); }; }
     // ── pulsanti rapidi sotto "AREA TEST": un menu a tendina che rifà tutto l'anno con un'altra impostazione ──
@@ -1579,10 +1617,10 @@
             document.addEventListener('click', function (e) { if (GT.qOpen && !el.contains(e.target)) { GT.qOpen = false; quickBar(); } }, true);
         }
         if (!GT.opts) loadOpts();
-        var o = GT.opts, y = o.year, R = o.rules, nSim = simCount(y);
+        var o = GT.opts, y = o.year, R = o.rules, nSim = simCount(y), nQ = quickOps().length;
         var head = '<button class="gt-q-main" onclick="GT.qToggle()" title="Cambia come sono fatti i turni del ' + y + ' (solo area test)">' +
             '<span class="gt-q-l">' + (GT.quickBusy ? 'Genero il ' + y + '…' : 'Turni ' + y) + '</span>' +
-            (GT.quickBusy ? '' : '<span class="gt-q-sum">' + quickSummary() + (nSim ? ' · assenze' : '') + '</span>') +
+            (GT.quickBusy ? '' : '<span class="gt-q-sum">' + quickSummary() + (nQ ? ' · +' + nQ + ' op.' : '') + (nSim ? ' · assenze' : '') + '</span>') +
             '<span class="msym">' + (GT.qOpen ? 'expand_less' : 'expand_more') + '</span></button>';
         var menu = !GT.qOpen ? '' : '<div class="gt-q-menu">' +
             '<div class="gt-q-sec">Diurnisti</div>' +
@@ -1599,6 +1637,10 @@
             qItem(false, 'event_busy', 'Assenze casuali', 'C.O., permessi, malattie… come nel 2026 · max 2 assenti insieme', "GT.simAbs('max2')") +
             qItem(false, 'beach_access', 'Assenze con cambio ferie', 'come sopra, più 2 giorni con 3 in ferie: due finiscono e il giorno stesso ne parte un terzo', "GT.simAbs('cambio')") +
             qItem(false, 'ink_eraser', 'Togli le assenze simulate', nSim ? nSim + ' giorni di assenza simulati nel ' + y : 'nessuna nel ' + y, "GT.simAbs('clear')", !nSim) +
+            '<div class="gt-q-sec">Operatori per provare</div>' +
+            qItem(false, 'person_add', 'Aggiungi un operatore', 'in servizio da tutto il ' + y + ', subito turni e reperibilità · ' + opsLine(), "GT.quickOps('add')") +
+            qItem(false, 'person_remove', 'Togli un operatore aggiunto', nQ ? 'toglie ' + quickOps()[nQ - 1].name : 'nessuno aggiunto da qui', "GT.quickOps('remove')", !nQ) +
+            (nQ > 1 ? qItem(false, 'group', 'Togli tutti gli operatori aggiunti', nQ + ' operatori', "GT.quickOps('clear')") : '') +
             '<div class="gt-q-sec">Il mio consiglio</div>' +
             qItem(isPreset(o), 'verified', 'Schema consigliato', 'turnisti M › P › N › S › R, diurnisti 6 h, riposi anche il venerdì', "GT.quick('preset')") +
             '</div>';
@@ -1606,10 +1648,38 @@
         el.classList.toggle('busy', !!GT.quickBusy);
         el.classList.toggle('open', !!GT.qOpen);
     }
+    // operatori finti aggiunti dal menu: in servizio dal 1° gennaio, senza affiancamento né scadenza
+    function quickOps() { return ((GT.opsCfg && GT.opsCfg.added) || []).filter(function (a) { return a.quick; }); }
+    function opsLine() {
+        var n = 0; try { n = appInput().ops.filter(function (x) { var y = GT.opts.year; return (!x.to || x.to >= y + '-01-01') && (!x.from || x.from <= y + '-12-31'); }).length; } catch (e) {}
+        var q = quickOps().length; return n ? 'ora ' + n + ' operatori' + (q ? ' (' + q + ' aggiunti da qui)' : '') : '';
+    }
+    GT.quickOps = function (action) {
+        if (GT.quickBusy || GT.busy) return;
+        if (!GT.opts) loadOpts();
+        return runQuick(async function (y) {
+            await loadOpsCfg();
+            var q = quickOps(), msg;
+            if (action === 'add') {
+                var used = {}; appInput().ops.forEach(function (o) { used[o.id] = 1; });
+                var k = 1; while (used['NUOVO ' + k]) k++;
+                GT.opsCfg.added.push({ id: 'NUOVO ' + k, name: 'NUOVO ' + k, from: y + '-01-01', to: '', turnFrom: '', repFrom: '', quick: true });
+                msg = 'aggiunto NUOVO ' + k;
+            } else if (action === 'remove' && q.length) {
+                var last = q[q.length - 1]; GT.opsCfg.added = GT.opsCfg.added.filter(function (a) { return a !== last; });
+                msg = 'tolto ' + last.name;
+            } else if (action === 'clear' && q.length) {
+                GT.opsCfg.added = GT.opsCfg.added.filter(function (a) { return !a.quick; });
+                msg = 'tolti ' + q.length + ' operatori aggiunti';
+            } else return '';
+            await saveOpsCfg();
+            return msg;
+        });
+    };
     GT.qToggle = async function () {
         if (GT.quickBusy) return;
         GT.qOpen = !GT.qOpen; quickBar();
-        if (GT.qOpen && GT.simInfo[GT.opts.year] === undefined) { await loadSim(GT.opts.year); quickBar(); }
+        if (GT.qOpen && (GT.simInfo[GT.opts.year] === undefined || !GT.opsCfg)) { await loadSim(GT.opts.year); if (!GT.opsCfg) await loadOpsCfg(); quickBar(); }
     };
     async function runQuick(prep) {
         if (GT.quickBusy || GT.busy) return;
@@ -1624,7 +1694,7 @@
             if (typeof activeYear !== 'undefined' && activeYear !== y) {
                 try { sessionStorage.setItem('gt_scroll', GT.plan.firstGenerated); sessionStorage.setItem('gt_toast', text); } catch (e) {}
                 gtSetWorkYear(y);
-            } else { if (typeof renderTable === 'function') setTimeout(renderTable, 600); toast(text); }
+            } else { if (!syncOpCols() && typeof renderTable === 'function') setTimeout(renderTable, 600); toast(text); }
         } catch (e) { console.error(e); toast('Non riuscito: ' + e.message, true); }
         finally { GT.quickBusy = false; quickBar(); }
     }
