@@ -64,7 +64,7 @@
     }
     var DEFAULT_OPTS = {
         model: '7h12', turni: 'pmnsr', nights: 1, covM: 2, covP: 2, repGapDays: 4, maxFerie: 2,
-        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, friRest: true, mBeforeRest: true, blocks: true, repGap: true, eqFest: true, maxFerie: true, altMP: true }
+        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, friRest: true, moveRest: false, mBeforeRest: true, blocks: true, repGap: true, eqFest: true, maxFerie: true, altMP: true }
     };
 
     /*
@@ -316,7 +316,9 @@
                 var pure = nd === 7 && free.length === 7;
                 // la settimana prima dell'ingresso in turno (P › M › N › S già scritti) può avere un riposo in più
                 var nx = addDays(ws, 7), entering = !!(G[nx] && role[nx] && role[nx][id] === 't');
-                people.push({ id: id, free: free, restN: pure ? model.rests : free.length - needWork, pure: pure, entering: entering, streak: streak, options: [], target: pure ? WEEK_MIN : target, nd: nd });
+                // riposo spostato la settimana prima (ore in più): questa settimana si recupera con un riposo in più
+                var recover = pure && R.moveRest && st[id].debt <= -model.dayMin / 2;
+                people.push({ id: id, free: free, restN: pure ? model.rests + (recover ? 1 : 0) : free.length - needWork, pure: pure, recover: recover, entering: entering, streak: streak, options: [], target: pure ? WEEK_MIN + (recover ? st[id].debt : 0) : target, nd: nd });
             });
             var needDay = wk.map(function (iso) {
                 if (!G[iso]) return { m: 0, p: 0 };
@@ -326,9 +328,11 @@
             people.forEach(function (pp) {
                 // un riposo in più o in meno si può (le ore si recuperano la settimana dopo), ma costa
                 // settimana intera: un riposo in più solo se serve a non fare più di 6 giorni di fila (es. l'ingresso in turno)
-                (pp.pure ? [pp.restN, pp.restN + 1] : [pp.restN, pp.restN + 1, pp.restN - 1, pp.restN + 2]).forEach(function (k) {
+                // regola "riposo spostato": settimana intera con un riposo in meno, solo se serve a chiudere un buco (costa più di
+                // ogni altra scelta, meno di un turno scoperto); il riposo torna la settimana dopo
+                (pp.pure ? [pp.restN, pp.restN + 1].concat(R.moveRest && pp.restN > 1 ? [pp.restN - 1] : []) : [pp.restN, pp.restN + 1, pp.restN - 1, pp.restN + 2]).forEach(function (k) {
                     if (k < 0 || k > pp.free.length) return;
-                    combos(pp.free, k).forEach(function (set) { var own = ownScore(pp, set); if (pp.pure && k > pp.restN && own > -300 && !pp.entering) return; pp.options.push({ set: set, own: own - (pp.pure ? 250 : 150) * Math.abs(k - pp.restN) }); });
+                    combos(pp.free, k).forEach(function (set) { var own = ownScore(pp, set); if (pp.pure && k > pp.restN && own > -300 && !pp.entering) return; pp.options.push({ set: set, own: own - (pp.pure ? (k < pp.restN ? 600 : 250) : 150) * Math.abs(k - pp.restN) }); });
                 });
                 if (!pp.options.length) pp.options.push({ set: [], own: 0 });
                 pp.pick = pp.options.reduce(function (a, b) { return b.own > a.own ? b : a; });
@@ -375,6 +379,20 @@
                     pp.options.forEach(function (o) { pp.pick = o; var sc = o.own + coverageScore(); if (sc > bestS + 1e-9) { bestS = sc; best = o; } });
                     pp.pick = best;
                 });
+            }
+            // se resta un buco, prova a spostare i riposi di due persone insieme (es. uno lavora il giovedì
+            // così l'altro può spostare lì il riposo della domenica): da soli nessuno dei due lo farebbe
+            function missing() { var n = 0; for (var j = 0; j < 7; j++) { var have = 0; people.forEach(function (pp) { if (pp.free.indexOf(j) >= 0 && pp.pick.set.indexOf(j) < 0) have++; }); n += Math.max(0, needDay[j].m + needDay[j].p - have); } return n; }
+            for (var round = 0; round < 3 && missing() > 0; round++) {
+                var improved = false;
+                for (var ia = 0; ia < people.length; ia++) for (var ib = ia + 1; ib < people.length; ib++) {
+                    var A = people[ia], B = people[ib], a0 = A.pick, b0 = B.pick, bestA = a0, bestB = b0;
+                    var bestS = a0.own + b0.own + coverageScore();
+                    A.options.forEach(function (oa) { A.pick = oa; B.options.forEach(function (ob) { B.pick = ob; var sc = oa.own + ob.own + coverageScore(); if (sc > bestS + 1e-9) { bestS = sc; bestA = oa; bestB = ob; } }); });
+                    A.pick = bestA; B.pick = bestB;
+                    if (bestA !== a0 || bestB !== b0) improved = true;
+                }
+                if (!improved) break;
             }
             people.forEach(function (pp) { pp.pick.set.forEach(function (j) { put(wk[j], pp.id, 'r'); }); });
 
@@ -982,6 +1000,7 @@
         { cat: 'diurnisti', fixed: 'model', t: 'Modello orario' },
         { cat: 'diurnisti', k: 'weekendRest', t: 'Riposi nel fine settimana', d: 'Quando la copertura lo permette i riposi cadono di sabato e domenica, a turno fra tutti.' },
         { cat: 'diurnisti', k: 'friRest', t: 'Riposi divisi anche sul venerdì', d: 'Il venerdì vale come il fine settimana e i riposi si dividono fra venerdì, sabato e domenica, così la domenica non restano in pochi.' },
+        { cat: 'diurnisti', k: 'moveRest', t: 'Riposo spostato per non lasciare un buco', d: 'Solo 7 h 12: se altrimenti resta un turno scoperto, un diurnista lavora in un suo giorno di riposo e lo recupera la settimana dopo (una settimana con 1 riposo, la successiva con 3). Mai 7 giorni di fila.' },
         { cat: 'diurnisti', k: 'mBeforeRest', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
         { cat: 'diurnisti', k: 'altMP', t: 'Alternanza mattina e pomeriggio', d: 'Dopo un pomeriggio una mattina e viceversa, invece di tanti giorni uguali di fila. La regola precedente ha la precedenza.' },
         { cat: 'rep', k: 'eqRep', t: 'Reperibilità divise in modo equo', d: 'Va a chi ne ha fatte meno (i festivi si contano a parte), fra chi è di mattina quel giorno.' },
@@ -1149,7 +1168,8 @@
                 return '<td class="' + cls + '">' + (c.f ? c.f(v) : v) + '</td>';
             }).join('') + '</tr>';
         }).join('') + '<tr class="avg"><th>Media</th>' + cols.map(function (c) { return '<td>' + (c.f ? c.f(avg[c.k]) : avg[c.k].toFixed(1)) + '</td>'; }).join('') + '</tr>';
-        var probs = A.holes.slice(0, 60).map(function (x) { return '<li><span class="msym" style="color:var(--cc-neg)">warning</span><span class="cc-grow">' + fmtDay(x.iso) + '<small>' + { M: 'mattina', P: 'pomeriggio', N: 'notte' }[x.shift] + ': ' + x.have + ' su ' + x.need + (x.pre ? ' · giorno già compilato nel calendario, il generatore non lo cambia' : '') + '</small></span><button class="cc-btn sm ghost" onclick="GT.goMonth(\'' + x.iso + '\')">Vedi</button></li>'; })
+        var absOn = function (iso) { var n = 0; ids.forEach(function (id) { var c = p.cells[iso] && p.cells[iso][id]; if (c && c.sub) n++; }); return n; };
+        var probs = A.holes.slice(0, 60).map(function (x) { var na = absOn(x.iso); return '<li><span class="msym" style="color:var(--cc-neg)">warning</span><span class="cc-grow">' + fmtDay(x.iso) + '<small>' + { M: 'mattina', P: 'pomeriggio', N: 'notte' }[x.shift] + ': ' + x.have + ' su ' + x.need + (x.pre ? ' · giorno già compilato nel calendario, il generatore non lo cambia' : na ? ' · ' + na + (na > 1 ? ' assenti' : ' assente') + ' quel giorno, nessun altro libero senza togliere un riposo' : '') + '</small></span><button class="cc-btn sm ghost" onclick="GT.goMonth(\'' + x.iso + '\')">Vedi</button></li>'; })
             .concat(A.warns.slice(0, 40).map(function (x) { return '<li><span class="msym" style="color:var(--cc-warn)">info</span><span class="cc-grow">' + fmtDay(x.iso) + '<small>' + h(x.text) + '</small></span><button class="cc-btn sm ghost" onclick="GT.goMonth(\'' + x.iso + '\')">Vedi</button></li>'; })).join('');
         var swaps = (p.swaps || []).filter(function (s) { return s.iso.slice(0, 4) === String(p.year); });
         return '<div class="cc-panel"><div class="cc-panel-head"><h3>Risultato ' + p.year + '</h3><span class="cc-hint">generato ' + new Date(p.generatedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' · diurnisti ' + MODELS[p.opts.model].label + ' · turnisti ' + TURNI[mergeOpts(p.opts).turni].label + ' · notte ' + p.opts.nights + '</span></div><div class="cc-panel-body">' +

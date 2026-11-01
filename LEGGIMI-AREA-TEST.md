@@ -62,14 +62,17 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
 
   | Diurnisti / turnisti | Turni scoperti | Riposi < 11 h | Sab/dom liberi | Weekend interi | Giorni lavorati |
   |---|---|---|---|---|---|
-  | 6 h · M › P › N › S › R | 32 | 0 | 17 | 0,3 | 200 |
-  | 6 h · P › M › N › S › R | 32 | 31 | 17 | 0,3 | 200 |
-  | 7 h 12 · M › P › N › S › R | 47 | 30 | 22 | 3 | 186 |
-  | 7 h 12 · P › M › N › S › R | 48 | 60 | 22 | 3 | 186 |
-  | 7 h 12 · turnisti 12 h | 37 | 28 | 30 | 8 | 158 |
-  | 6 h · turnisti 12 h | 36 | 0 | 24 | 5 | 173 |
+  | 6 h · M › P › N › S › R | 30 | 0 | 17 | 0,3 | 200 |
+  | 6 h · P › M › N › S › R | 30 | 31 | 17 | 0,3 | 200 |
+  | 7 h 12 · M › P › N › S › R | 40 | 30 | 22 | 3 | 186 |
+  | 7 h 12 · P › M › N › S › R | 40 | 60 | 22 | 3 | 186 |
+  | 7 h 12 · turnisti 12 h | 34 | 29 | 30 | 8 | 158 |
+  | 6 h · turnisti 12 h | 37 | 0 | 24 | 5 | 173 |
 
-  Con un 10° operatore i turni scoperti scendono a 1–7 l'anno (7 h 12: 1, 6 h: 3, 12 h: 4–7).
+  I buchi che restano cadono quasi tutti nei giorni con 2 assenti (con 9 persone non c'è nessuno
+  libero senza togliere un riposo). Il generatore sposta i riposi anche a coppie; la regola
+  "Riposo spostato" (spenta di base) ne toglie altri ~5 l'anno col 7 h 12.
+  Con un 10° operatore i turni scoperti scendono a 0,5–7 l'anno (7 h 12: 0,5, 6 h: 3, 12 h: 3–7).
 - **Richieste dal portale**: il pannello che si apre con la freccia a destra dello schermo
   carica `richieste/` (copia del portale Richieste A.S. 118 collegata solo al Firebase
   finto tramite `firebase-modular-shim.js`, non a quello vero). Le richieste fatte lì
