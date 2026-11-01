@@ -50,6 +50,24 @@
     function codeMinutes(v, model, turni) { if (v === 'm' || v === 'p') return MODELS[model].dayMin; var T = TURNI[turni] || TURNI.pmnsr; return T.min[v] || MINUTES[v] || 0; }
     function isM(v) { return v === 'M' || v === 'm' || v === 'M+N' || v === 'G'; }
     function isP(v) { return v === 'P' || v === 'p' || v === 'G'; }
+    // la reperibilità arriva alle 13 del giorno dopo: quel giorno il reperibile fa il pomeriggio
+    // (o la notte, se è turnista), mai la mattina, le 12 h di giorno o un riposo
+    function repNextOk(v) { return v === 'P' || v === 'p' || v === 'N'; }
+    // diurnista di mattina il giorno dopo la reperibilità: un collega diurnista di pomeriggio quel giorno
+    // con cui scambiare (la copertura resta uguale). Solo caselle messe dal generatore.
+    function mpSwapPartner(G, role, ids, nx, id) {
+        function free(c, who) { return c && !c.sub && c.gen && !c.fixed && !c.req && !c.manual && !(role[nx] && role[nx][who] === 't'); }
+        var cx = G[nx] && G[nx][id]; if (!free(cx, id) || cx.v !== 'm') return null;
+        var pv = addDays(nx, -1), af = addDays(nx, 1), best = null, bestS = Infinity;
+        ids.forEach(function (y) {
+            var cy = G[nx][y]; if (y === id || !free(cy, y) || cy.v !== 'p') return;
+            var py = G[pv] && G[pv][y], ny = G[af] && G[af][y], sc = 0;
+            if (py && !py.sub && (py.v === 'p' || py.v === 'P')) sc += 2;   // pomeriggio › mattina: riposo più corto
+            if (ny && !ny.sub && REST[ny.v]) sc -= 1;                         // mattina prima del riposo
+            if (sc < bestS) { bestS = sc; best = y; }
+        });
+        return best;
+    }
     function isN(v) { return v === 'N' || v === 'M+N'; }
 
     var FERIE_SUB = { f: 1, v: 1 };
@@ -465,6 +483,7 @@
             var pick = chooseRep(iso, []); if (!pick) { issues.push({ kind: 'rep', iso: iso, text: 'Nessun reperibile possibile' }); return; }
             rep[iso] = pick.id;
             if (!pick.gapOk) issues.push({ kind: 'rep', iso: iso, text: 'Reperibilità ravvicinata per ' + nameOf[pick.id] });
+            if (pick.bad) issues.push({ kind: 'rep', iso: iso, text: nameOf[pick.id] + ' è reperibile ma il giorno dopo non fa il pomeriggio' });
             repSt[pick.id].n++; if (fest(iso)) repSt[pick.id].fest++; repSt[pick.id].last = iso;
         });
         function chooseRep(iso, exclude) {
@@ -478,8 +497,39 @@
             var c = ids.filter(function (id) { return ok(id) && tierOf(vOf(iso, id)) >= 0; });
             if (!c.length) return null;
             // il giorno dopo la reperibilità (fino alle 13) si lavora: il turnista fa la notte o il pomeriggio, il diurnista il pomeriggio; mai un riposo
-            c = c.map(function (id) { var nv = vOf(nx, id); return { id: id, tier: tierOf(vOf(iso, id)), gapOk: diffDays(iso, repSt[id].last) >= gap, turn: role[iso] && role[iso][id] === 't' && vOf(iso, id) === 'M', next: !nv || REST[nv] ? 0 : (nv === 'N' || nv === 'p' || nv === 'P' ? 2 : 1) }; });
-            c.sort(function (a, b) {
+            c = c.map(function (id) { var nv = vOf(nx, id); return { id: id, tier: tierOf(vOf(iso, id)), gapOk: diffDays(iso, repSt[id].last) >= gap, turn: role[iso] && role[iso][id] === 't' && vOf(iso, id) === 'M', next: !nv || REST[nv] ? 0 : (repNextOk(nv) ? 2 : 1) }; });
+            c.sort(cmp);
+            // regola fissa: il giorno dopo pomeriggio (o notte). Se nessuno lo fa già, un diurnista di mattina
+            // il giorno dopo scambia con un collega di pomeriggio; solo se non si può resta com'era, segnalato
+            if (!G[nx]) return c[0];   // il giorno dopo è fuori dall'anno generato
+            var good = c.filter(function (x) { return x.next === 2; });
+            if (good.length && good[0].gapOk) return good[0];
+            // con lo scambio si trova anche una reperibilità non ravvicinata
+            var sw = trySwap(function (x) { return x.gapOk; }); if (sw) return sw;
+            if (good.length) return good[0];
+            sw = trySwap(function () { return true; }); if (sw) return sw;
+            // giorno corto di personale: il diurnista passa dalla mattina al pomeriggio se i turni scoperti non aumentano
+            for (var k = 0; k < c.length; k++) {
+                var cx = G[nx][c[k].id];
+                if (c[k].next !== 1 || !cx || cx.v !== 'm' || !cx.gen || cx.fixed || cx.req || cx.manual || (role[nx] && role[nx][c[k].id] === 't')) continue;
+                if (countShift(nx, isM) - 1 < opts.covM && countShift(nx, isP) >= opts.covP) continue;
+                G[nx][c[k].id] = Object.assign({}, cx, { v: 'p', cov: '' }); c[k].next = 2; return c[k];
+            }
+            // altrimenti meglio un riposo il giorno dopo (libero fino alle 13) che una mattina
+            c.sort(function (a, b) { return a.next !== b.next ? a.next - b.next : cmp(a, b); });
+            c[0].bad = true;
+            return c[0];
+            function trySwap(test) {
+                for (var i = 0; i < c.length; i++) {
+                    if (c[i].next !== 1 || !test(c[i])) continue;
+                    var y = mpSwapPartner(G, role, ids, nx, c[i].id); if (!y) continue;
+                    var tmp = G[nx][c[i].id]; G[nx][c[i].id] = G[nx][y]; G[nx][y] = tmp;
+                    if (st[c[i].id] && st[y]) { st[c[i].id].m--; st[c[i].id].p++; st[y].p--; st[y].m++; }
+                    c[i].next = 2; c[i].swapped = y; return c[i];
+                }
+                return null;
+            }
+            function cmp(a, b) {
                 if ((a.next > 0) !== (b.next > 0)) return a.next > 0 ? -1 : 1;
                 if (a.gapOk !== b.gapOk) return a.gapOk ? -1 : 1;
                 // domeniche e festivi: se uno ne ha già almeno uno in più, conta l'equità prima del turno
@@ -496,8 +546,7 @@
                 }
                 if (a.turn !== b.turn) return a.turn ? -1 : 1;
                 return diffDays(iso, repSt[b.id].last) - diffDays(iso, repSt[a.id].last);
-            });
-            return c[0];
+            }
         }
 
         var plan = {
@@ -584,6 +633,7 @@
             if (lastRep[id] && diffDays(iso, lastRep[id]) < (opts.rules.repGap ? opts.repGapDays : 1)) warns.push({ iso: iso, id: id, text: nameOf[id] + ': reperibilità ravvicinata (' + diffDays(iso, lastRep[id]) + ' giorni)' });
             lastRep[id] = iso;
             var x = c(iso, id); if (x && x.sub) warns.push({ iso: iso, id: id, text: nameOf[id] + ' è reperibile ma assente' });
+            var nx = addDays(iso, 1), y = c(nx, id); if (G[nx] && y && !y.sub && !repNextOk(y.v)) warns.push({ iso: nx, id: id, text: nameOf[id] + ': il giorno dopo la reperibilità ' + (REST[y.v] ? 'riposa' : 'fa ' + (y.v === 'G' ? 'il giorno da 12 h' : shiftName(y.v))) + ' invece del pomeriggio' });
         });
         ids.forEach(function (id) {
             var s = stats[id], wk = Object.keys(s.weeks).filter(function (k) { return k >= days[0] && addDays(k, 6) <= days[days.length - 1]; });
@@ -625,6 +675,24 @@
         function v(iso, id) { var c = G[iso] && G[iso][id]; return c && !c.sub ? c.v : ''; }
         function abs(iso, id) { var c = G[iso] && G[iso][id]; return !!(c && c.sub); }
         function cnt(iso, test) { var n = 0; ids.forEach(function (id) { if (!abs(iso, id) && test(v(iso, id))) n++; }); return n; }
+        // mettere "nv" a "id" nel giorno "d" rompe la reperibilità? (il giorno dopo si fa il pomeriggio, e il reperibile lavora)
+        // giorni la cui reperibilità va passata ad altri se "id" prende questi turni (ch = [[giorno, turno], …])
+        function repClash(id, ch) {
+            var out = [];
+            ch.forEach(function (x) {
+                var d = x[0], nv = x[1], pd = addDays(d, -1);
+                if (plan.rep[pd] === id && !repNextOk(nv) && out.indexOf(pd) < 0) out.push(pd);
+                if (plan.rep[d] === id && (!nv || nv === 'N' || nv === 'S' || REST[nv]) && out.indexOf(d) < 0) out.push(d);
+            });
+            return out;
+        }
+        function moveReps(days, id) {
+            days.forEach(function (d) {
+                var nr = pickRep(d, [id]);
+                if (nr) { setRep(d, nr, 'reperibilità di ' + nameOf[id] + ', che copre un turno'); notes.push(d + ': reperibilità passata a ' + nameOf[nr]); }
+                else notes.push(d + ': ' + nameOf[id] + ' resta reperibile, non c\u2019è nessuno a cui passarla');
+            });
+        }
         if (!who) return { error: 'Operatore non trovato: ' + (req.name || '?') };
 
         if (req.type === 'cambio_turno') {
@@ -643,7 +711,7 @@
             notes.push('Reperibilità del ' + dr + ' passata da ' + nameOf[who] + ' a ' + nameOf[other]);
             return { changes: changes, holes: holes, notes: notes };
         }
-        var sub = REQ_SUB[req.type];
+        var sub = req.sub || REQ_SUB[req.type];
         if (!sub) return { error: 'Questo tipo di richiesta (' + req.type + ') va inserito a mano' };
         var dates = reqDates(req, plan);
         if (!dates.length) return { error: 'Le date non sono nell\u2019anno generato (' + plan.year + ')' };
@@ -690,9 +758,11 @@
                     if (sh === 'P' && nv(id) === 'S') return;
                     // a) spostare un diurnista dall'altro turno, se lì sono in più del minimo
                     var other = sh === 'M' ? 'P' : 'M', otherTest = other === 'M' ? isM : isP, otherMin = other === 'M' ? opts.covM : opts.covP;
-                    if (isD && (cur === other.toLowerCase()) && cnt(iso, otherTest) > otherMin) consider(id, 1, function () { set(iso, id, { v: sh.toLowerCase(), sub: '', gen: true, cov: cov }, 'spostato per coprire ' + cov); });
+                    // chi era reperibile il giorno prima fa il pomeriggio: se va di mattina la reperibilità passa ad altri
+                    var rc = repClash(id, [[iso, sh === 'M' ? 'm' : 'p']]), rcCost = 8 * rc.length;
+                    if (isD && (cur === other.toLowerCase()) && cnt(iso, otherTest) > otherMin) consider(id, 1 + rcCost, function () { set(iso, id, { v: sh.toLowerCase(), sub: '', gen: true, cov: cov }, 'spostato per coprire ' + cov); moveReps(rc, id); });
                     // b) richiamare un diurnista dal riposo (perde un riposo: ore in più)
-                    if (isD && cur === 'r' && weekRests(id) >= 1 && pv(id) !== 'S') consider(id, 20 + Math.max(0, extra(id)) / 60 + (opts.rules.eqOp ? 0 : 0), function () { set(iso, id, { v: sh.toLowerCase(), sub: '', gen: true, cov: cov }, 'richiamato dal riposo'); });
+                    if (isD && cur === 'r' && weekRests(id) >= 1 && pv(id) !== 'S') consider(id, 20 + rcCost + Math.max(0, extra(id)) / 60, function () { set(iso, id, { v: sh.toLowerCase(), sub: '', gen: true, cov: cov }, 'richiamato dal riposo'); moveReps(rc, id); });
                     // c) turnista nel giorno di riposo del ciclo (ultima scelta)
                     if (!isD && cur === 'R' && pv(id) !== 'S' && sh === 'P') consider(id, 60 + Math.max(0, extra(id)) / 60, function () { set(iso, id, { v: 'P', sub: '', gen: true, cov: cov }, 'richiamato dal riposo'); });
                 } else {   // notte: dopo servono sempre lo smonto e un riposo
@@ -703,10 +773,12 @@
                     if (!freeable(nx, nxV) || !freeable(af, afV)) return;
                     var base = cur === 'r' ? 20 : cur === 'm' ? 35 : -1; if (base < 0) return;
                     if (afV === 'm' || afV === 'p') base += 15;   // si perde anche un turno il giorno dopo lo smonto
-                    consider(id, base + Math.max(0, extra(id)) / 60, function () {
+                    var rcN = repClash(id, [[iso, cur === 'm' ? 'M+N' : 'N'], [nx, 'S']].concat(G[af] && !abs(af, id) && !REST[afV] ? [[af, 'r']] : []));
+                    consider(id, base + 8 * rcN.length + Math.max(0, extra(id)) / 60, function () {
                         set(iso, id, { v: cur === 'm' ? 'M+N' : 'N', sub: '', gen: true, cov: cov }, 'notte di ' + cov);
                         if (G[nx]) set(nx, id, { v: 'S', sub: '', gen: true }, 'smonto');
                         if (G[af] && !abs(af, id) && !REST[afV]) set(af, id, { v: 'r', sub: '', gen: true, note: 'riposo dopo la notte' }, 'riposo dopo la notte');
+                        moveReps(rcN, id);
                     });
                 }
             });
@@ -720,7 +792,7 @@
             Object.keys(plan.rep).forEach(function (d) { if (d === iso) return; var id = plan.rep[d], k = Math.abs(diffDays(iso, d)); if (near[id] === undefined || k < near[id]) near[id] = k; });
             var count = {}; Object.keys(plan.rep).forEach(function (d) { count[plan.rep[d]] = (count[plan.rep[d]] || 0) + 1; });
             var c = ids.filter(function (id) { return exclude.indexOf(id) < 0 && !abs(iso, id) && !abs(addDays(iso, 1), id) && v(iso, id) && v(iso, id) !== 'N' && v(iso, id) !== 'S' && !REST[v(iso, id)]; });
-            var nxt = function (id) { var nv = v(addDays(iso, 1), id); return !nv || REST[nv] ? 0 : 1; };
+            var nx = addDays(iso, 1), nxt = function (id) { var nv = v(nx, id); return !nv || REST[nv] ? 0 : repNextOk(nv) ? 2 : 1; };
             c.sort(function (a, b) {
                 if (nxt(a) !== nxt(b)) return nxt(b) - nxt(a);
                 var ga = near[a] === undefined || near[a] >= gap, gb = near[b] === undefined || near[b] >= gap;
@@ -728,7 +800,17 @@
                 if (isM(v(iso, a)) !== isM(v(iso, b))) return isM(v(iso, a)) ? -1 : 1;
                 return (count[a] || 0) - (count[b] || 0);
             });
-            return c[0] || null;
+            if (!c.length || !G[nx] || nxt(c[0]) === 2) return c[0] || null;
+            // nessuno fa già il pomeriggio il giorno dopo: un diurnista di mattina scambia con un collega di pomeriggio
+            for (var i = 0; i < c.length; i++) {
+                var y = mpSwapPartner(G, plan.role, ids, nx, c[i]); if (!y) continue;
+                var a = snap(nx, c[i]), b = snap(nx, y);
+                set(nx, c[i], b, 'pomeriggio dopo la reperibilità'); set(nx, y, a, 'scambio con ' + nameOf[c[i]]);
+                notes.push(nx + ': ' + nameOf[c[i]] + ' fa il pomeriggio (è reperibile il giorno prima), ' + nameOf[y] + ' la mattina');
+                return c[i];
+            }
+            notes.push(iso + ': ' + nameOf[c[0]] + ' è reperibile ma il giorno dopo non fa il pomeriggio');
+            return c[0];
         }
     }
     function revertChanges(plan, changes) {
@@ -1006,6 +1088,7 @@
         { cat: 'diurnisti', k: 'mBeforeRest', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
         { cat: 'diurnisti', k: 'altMP', t: 'Alternanza mattina e pomeriggio', d: 'Dopo un pomeriggio una mattina e viceversa, invece di tanti giorni uguali di fila. La regola precedente ha la precedenza.' },
         { cat: 'rep', k: 'eqRep', t: 'Reperibilità divise in modo equo', d: 'Va a chi ne ha fatte meno (i festivi si contano a parte), fra chi è di mattina quel giorno.' },
+        { cat: 'rep', fixed: 'repNext', t: 'Il giorno dopo la reperibilità si fa il pomeriggio', d: 'La reperibilità arriva alle 13 del giorno dopo: quel giorno il reperibile fa il pomeriggio (il turnista anche la notte), mai la mattina. Se nessuno è già di pomeriggio, un diurnista scambia la mattina con un collega. Vale anche per le coperture automatiche.' },
         { cat: 'rep', k: 'repGap', t: 'Reperibilità non ravvicinate', gap: true },
         { cat: 'equita', k: 'eqOp', t: 'Equità fra tutti gli operatori', d: 'Stesse ore, notti, weekend liberi e turni di mattina e pomeriggio: chi ne ha avuti meno passa avanti.' },
         { cat: 'equita', k: 'eqFest', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
@@ -1535,7 +1618,8 @@
         return Object.keys(upd).length;
     }
     async function afterBoot() {
-        quickBar();
+        quickBar(); autoBtn();
+        loadAutoCov(SHIFT_YEAR).then(function () { if (Object.keys(GT.autoCov[SHIFT_YEAR] || {}).length && typeof renderTable === 'function' && finalData && finalData.length) renderTable(); });
         loadOpsCfg().then(syncOpCols);
         await loadCalYears();
         try { await new Promise(function (r) { setTimeout(r, 1500); }); var nOrph = await cleanOrphanReps((typeof realActiveYear !== 'undefined' ? realActiveYear : SHIFT_YEAR) + 1); if (nOrph) console.log('Tolte ' + nOrph + ' reperibilità senza turno'); } catch (e) { console.error(e); }
@@ -1551,14 +1635,135 @@
     // "copertura turno di …" sulle caselle dell'anno generato
     function decorateCov() {
         try {
-            var map = GT.covMap[SHIFT_YEAR]; if (!map || !finalData || !finalData.length) return;
+            if (!finalData || !finalData.length) return;
+            var map = GT.covMap[SHIFT_YEAR] || {}, am = GT.autoCov[SHIFT_YEAR] || {};
             var head = finalData[0].map(function (h) { return (h && h.v !== undefined ? h.v : h); });
+            var P = GT.plan && GT.plan.year === SHIFT_YEAR ? GT.plan : null;
             Object.keys(map).forEach(function (k) {
-                var i = k.indexOf('|'), iso = k.slice(0, i), id = k.slice(i + 1), r = repRowOfDate(iso), c = head.indexOf(id);
-                if (r && c >= 3 && finalData[r][c]) finalData[r][c].gtCov = map[k];
+                var i = k.indexOf('|'), iso = k.slice(0, i), id = k.slice(i + 1), r = repRowOfDate(iso), c = head.indexOf(id), cell = r && c >= 3 && finalData[r][c];
+                if (!cell) return;
+                // solo se nel calendario c'è ancora il turno del generatore (non un'assenza o un turno cambiato a mano)
+                var cc = cellCode(cell), pc = P && P.cells[iso] && P.cells[iso][id];
+                if (!cc.sub && WORK[cc.v] && (!pc || pc.v === cc.v)) cell.gtCov = map[k]; else delete cell.gtCov;
             });
+            Object.keys(am).forEach(function (k) { var i = k.indexOf('|'), r = repRowOfDate(k.slice(0, i)), c = head.indexOf(k.slice(i + 1)); if (r && c >= 3) covAt(r, c); });
         } catch (e) {}
     }
+
+    // ── modifiche automatiche dalla ruota (Modifica turni del calendario) ──
+    // Con l'interruttore acceso, un'assenza messa su un turno fa trovare il sostituto con le regole del
+    // generatore (copertura, notte con smonto e riposo, reperibilità spostata). Tutto resta fra le modifiche
+    // in sospeso: si salva o si annulla insieme all'assenza.
+    GT.autoCov = {};
+    function autoOn() { try { return localStorage.getItem('gt_auto_edit') === '1'; } catch (e) { return false; } }
+    function autoCovDoc(y) { return db.collection('test_generatore').doc('autocov_' + y); }
+    async function loadAutoCov(y) { try { var d = await autoCovDoc(y).get(); GT.autoCov[y] = d.exists ? (d.data().map || {}) : {}; } catch (e) { GT.autoCov[y] = GT.autoCov[y] || {}; } return GT.autoCov[y]; }
+    function saveAutoCov(y) { try { autoCovDoc(y).set({ map: GT.autoCov[y] || {}, updatedAt: new Date().toISOString() }).catch(function () {}); } catch (e) {} }
+    // "copertura turno di …" su una casella, se il turno è ancora quello messo in automatico
+    function covAt(row, col) {
+        var m = GT.autoCov[SHIFT_YEAR], cell = finalData[row] && finalData[row][col]; if (!m || !cell) return;
+        var iso = repRowDate(row), x = iso && m[iso + '|' + String(finalData[0][col])];
+        if (x && cellCode(cell).v === x.v && !cellCode(cell).sub) cell.gtCov = x.n;
+    }
+    function cellCode(o) {
+        o = o || {}; var sub = String(o.subV || '').trim().toLowerCase();
+        if (sub && SPECIAL_SUBCODES[sub] !== undefined) return { v: '', sub: sub };
+        var v = String(o.v || '').trim(), si = v.indexOf('/'); if (si >= 0) v = v.slice(0, si).trim();
+        if (!v || v === '-') return { v: '', sub: '' };
+        if (/^[mpr]$/.test(v)) return { v: v, sub: '' };
+        var u = v.toUpperCase(); if (u === 'SM') u = 'S'; if (u === 'MN') u = 'M+N';
+        if (customCodes[u] && customCodes[u].kind === 'abs') return { v: '', sub: 'x' };
+        return { v: u, sub: '' };
+    }
+    // il calendario com'è adesso (con le modifiche in sospeso), nella forma del piano del generatore
+    function calendarPlan() {
+        var inp = appInput(), y = SHIFT_YEAR, P0 = GT.plan && GT.plan.year === y ? GT.plan : null;
+        var plan = { year: y, opts: P0 ? P0.opts : GT.opts, ops: inp.ops.map(function (o) { return { id: o.id, name: o.name }; }), cells: {}, role: {}, rep: Object.assign({}, inp.histRep), holidays: P0 ? P0.holidays : {} };
+        Object.keys(inp.hist).forEach(function (iso) {
+            plan.cells[iso] = {};
+            Object.keys(inp.hist[iso]).forEach(function (id) { var h = inp.hist[iso][id]; plan.cells[iso][id] = { v: h.v || '', sub: h.sub || '', gen: true }; });
+        });
+        return plan;
+    }
+    // turnista o diurnista: dal codice del giorno (maiuscolo = turnista), nei giorni di assenza come il giorno prima
+    function calendarRoles(plan) {
+        var last = {};
+        Object.keys(plan.cells).sort().forEach(function (iso) {
+            plan.role[iso] = {};
+            plan.ops.forEach(function (o) {
+                var c = plan.cells[iso][o.id], v = c && !c.sub ? c.v : '';
+                if (v) last[o.id] = /^(M|P|N|S|R|G)$/.test(v) ? 't' : 'd';
+                plan.role[iso][o.id] = last[o.id] || 'd';
+            });
+        });
+    }
+    window.gtAutoAfterEdit = function (entries) {
+        if (!autoOn() || !entries || !entries.length) return [];
+        try {
+            var idx = coordKeyIndex(), abs = [];
+            entries.forEach(function (en) {
+                if (en.kind) return;
+                var p = idx.get(en.key); if (!p) return;
+                var nx = cellCode(en.next), pv = cellCode(en.prev || (rawFinalData[p.row] && rawFinalData[p.row][p.col]));
+                if (!nx.sub || pv.sub) return;   // solo assenze nuove
+                var iso = repRowDate(p.row); if (iso) abs.push({ iso: iso, id: String(finalData[0][p.col]), sub: nx.sub, prevV: pv.v });
+            });
+            if (!abs.length) return [];
+            var plan = calendarPlan(), y = SHIFT_YEAR;
+            abs.forEach(function (a) { if (plan.cells[a.iso]) plan.cells[a.iso][a.id] = { v: a.prevV, sub: '', gen: true }; });
+            calendarRoles(plan);
+            abs.sort(function (a, b) { return a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0; });
+            var touched = {}, repDays = {}, notes = [], holes = [], mine = {};
+            abs.forEach(function (a) { mine[a.iso + '|' + a.id] = 1; });
+            abs.forEach(function (a) {
+                var r = applyRequest(plan, { id: 'auto', sub: a.sub, name: a.id, dateFrom: a.iso, dateTo: a.iso }, 'auto');
+                if (r.error) return;
+                r.changes.forEach(function (ch) { if (ch.rep) repDays[ch.iso] = 1; else if (!mine[ch.iso + '|' + ch.id]) touched[ch.iso + '|' + ch.id] = 1; });
+                notes = notes.concat(r.notes); holes = holes.concat(r.holes);
+            });
+            var out = [], keys = [], repDates = [], rows = [], head = finalData[0];
+            GT.autoCov[y] = GT.autoCov[y] || {};
+            Object.keys(touched).forEach(function (k) {
+                var i = k.indexOf('|'), iso = k.slice(0, i), id = k.slice(i + 1), r = repRowOfDate(iso), col = head.indexOf(id);
+                if (!r || col < 3) return;
+                var c = plan.cells[iso][id] || { v: '', sub: '' }, cur = cellCode(finalData[r][col]);
+                if (c.cov) GT.autoCov[y][k] = { n: c.cov, v: c.v }; else delete GT.autoCov[y][k];
+                if ((c.v || '') === cur.v && (c.sub || '') === cur.sub) return;
+                var key = cellKey(r, col), next = { v: c.v || '', subV: c.sub || '' };
+                out.push({ key: key, prev: setOverride(key, next), next: next }); keys.push(key); rows.push(r);
+            });
+            Object.keys(repDays).forEach(function (iso) {
+                var en = repChange('rep', iso, plan.rep[iso] || '');
+                if (JSON.stringify(en.prev) === JSON.stringify(en.next)) return;
+                out.push(en); repDates = repDates.concat(repDatesOfKey('rep', iso));
+            });
+            if (keys.length || repDates.length) afterCoordChange(keys, repDates);
+            if (rows.length) { rows.forEach(function (r) { head.forEach(function (_, col) { if (col >= 3) covAt(r, col); }); }); if (typeof renderTableRows === 'function') renderTableRows(rows); }
+            saveAutoCov(y);
+            var said = notes.filter(function (n) { return /coperta da|reperibilità (a |passata)|fa il pomeriggio/.test(n); }).map(function (n) { return n.replace(/^(\d{4}-\d{2}-\d{2}): /, function (_, d) { return fmtDay(d) + ': '; }); });
+            holes.forEach(function (hh) { said.push(fmtDay(hh.iso) + ': nessuno disponibile per ' + (hh.shift === 'REP' ? 'la reperibilità' : shiftName(hh.shift)) + ' di ' + nameOf(hh.absent)); });
+            if (said.length) toast('Automatico · ' + said.slice(0, 4).join(' · ') + (said.length > 4 ? ' · e altre ' + (said.length - 4) : ''), holes.length > 0);
+            return out;
+        } catch (e) { console.error(e); return []; }
+    };
+    function autoBtn() {
+        var bar = document.getElementById('tw-bar'); if (!bar) return;
+        var b = document.getElementById('tw-auto-btn');
+        if (!b) {
+            var sep = document.createElement('span'); sep.className = 'tw-bar-sep'; bar.appendChild(sep);
+            b = document.createElement('button'); b.id = 'tw-auto-btn'; b.className = 'tw-bar-btn tw-auto'; b.onclick = function () { GT.toggleAuto(); }; bar.appendChild(b);
+        }
+        var on = autoOn();
+        b.classList.toggle('on', on);
+        b.innerHTML = '<span class="msym">' + (on ? 'auto_fix_high' : 'auto_fix_off') + '</span>Auto';
+        b.title = on ? 'Modifiche automatiche attive: un’assenza su un turno trova da sola il sostituto. Tocca per spegnere.' : 'Modifiche automatiche spente. Tocca per accendere: un’assenza su un turno troverà da sola il sostituto.';
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    GT.toggleAuto = function () {
+        var on = !autoOn(); try { localStorage.setItem('gt_auto_edit', on ? '1' : '0'); } catch (e) {}
+        autoBtn();
+        toast(on ? 'Modifiche automatiche accese: se metti un’assenza su un turno trovo io il sostituto (“copertura turno di …”) e sposto la reperibilità se serve. Si annulla tutto insieme.' : 'Modifiche automatiche spente.');
+    };
     // operatori aggiunti nel generatore (dal menu rapido o dal riquadro Operatori): nell'anno generato
     // dell'area test compaiono come colonne del calendario, senza toccare la lista operatori dell'app
     function genOpCols() {
@@ -1570,6 +1775,7 @@
             return (!o.from || o.from <= b) && (!to || to >= a);
         }).map(function (o) { return o.id; });
     }
+    if (typeof applyOverrideAt === 'function') { var _aoa = applyOverrideAt; applyOverrideAt = function (row, col) { var r = _aoa.apply(this, arguments); if (r) covAt(row, col); return r; }; }
     GT.opCols = [];
     if (typeof injectVirtualOperators === 'function') {
         var _ivo = injectVirtualOperators;

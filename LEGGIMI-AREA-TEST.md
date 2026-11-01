@@ -51,6 +51,17 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   secondo riposo, dove mancano più diurnisti: si arriva a 36 h).
   Riposi dei diurnisti divisi anche sul venerdì. Dopo una notte sempre smonto e riposo,
   anche per il diurnista che la copre; mai 7 giorni di lavoro di fila.
+  Reperibilità (regola fissa): arriva alle 13 del giorno dopo, quindi quel giorno il
+  reperibile fa il pomeriggio (o la notte), mai la mattina. Se nessuno è già di pomeriggio
+  il giorno dopo, un diurnista scambia la mattina con un collega di pomeriggio; nei giorni
+  con troppe assenze resta segnalato (con i 12 h meno di una volta l'anno). Vale anche
+  per le coperture automatiche, e il controllo "!" del calendario segue la stessa regola.
+- **Modifiche automatiche dalla ruota** (Modifica turni › barra sopra la ruota › "Auto"):
+  con l'interruttore acceso, mettendo un'assenza su un turno il sostituto si trova da solo
+  con le regole del generatore ("copertura turno di …", notte con smonto e riposo,
+  reperibilità passata ad altri). Le modifiche restano in sospeso con l'assenza: Salva o
+  Annulla le prende tutte insieme. Le etichette "copertura" stanno in
+  `test_generatore/autocov_<anno>`; l'interruttore è per dispositivo (`gt_auto_edit`).
 - **Menu rapido sotto la scritta AREA TEST** (freccia): rifà tutto l'anno con un altro
   modello diurnisti (6 h / 7 h 12), ciclo turnisti, 2ª notte, riposi del venerdì, oppure
   con **assenze simulate** come nel 2026 vero (C.O. ~28 giorni a testa in 4–5 periodi,
