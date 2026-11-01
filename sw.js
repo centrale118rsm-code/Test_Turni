@@ -5,7 +5,7 @@
 // v7: modalità offline. Il nome della cache è solo di questa app: le app dello stesso sito
 // (ufficiale autisti, infermieri) hanno le loro cache e non si toccano.
 const CACHE_PREFIX = 'test-autisti-';   // AREA TEST: cache propria, non tocca quelle delle app vere
-const CACHE_NAME = CACHE_PREFIX + 'v9';
+const CACHE_NAME = CACHE_PREFIX + 'v10';
 const OLD_CACHES = [];   // AREA TEST: non cancella le cache delle altre app sullo stesso sito
 
 const urlsToCache = [
@@ -16,7 +16,9 @@ const urlsToCache = [
   './icon-autisti3-512.png',
   './icon-autisti3-192.png',
   './area-test.js',
-  './firebase-mock.js'
+  './firebase-mock.js',
+  './generatore-turni.js',
+  './portale-richieste.html'
 ];
 // librerie e caratteri presi da Internet che servono anche senza rete
 const CDN_HOSTS = ['www.gstatic.com', 'cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];

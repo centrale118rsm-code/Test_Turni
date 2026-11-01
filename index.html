@@ -3499,6 +3499,9 @@
                 <button data-sec="modifica" onclick="ccGo('modifica')"><span class="msym">edit_calendar</span><span>Modifica turni</span><span class="cc-count" id="cc-count-pending"></span></button>
                 <button data-sec="bozza" onclick="ccGo('bozza')"><span class="msym">event_upcoming</span><span>Bozza del mese</span></button>
                 <button data-sec="importa" onclick="ccGo('importa')"><span class="msym">upload_file</span><span>Importa da Excel</span></button>
+                <div class="cc-nav-group">Area test</div>
+                <button data-sec="generazione" onclick="ccGo('generazione')"><span class="msym">tune</span><span>Generazione turni</span></button>
+                <button data-sec="richiestetest" onclick="ccGo('richiestetest')"><span class="msym">inventory_2</span><span>Richieste dal portale</span><span class="cc-count" id="cc-count-gtreq"></span></button>
                 <div class="cc-nav-group">Personale</div>
                 <button data-sec="operatori" onclick="ccGo('operatori')"><span class="msym">group</span><span>Operatori</span></button>
                 <button data-sec="ore" onclick="ccGo('ore')"><span class="msym">schedule</span><span>Conteggio ore</span></button>
@@ -12114,7 +12117,7 @@
     function ccRenderSection() {
         const main = document.getElementById('cc-main'); if(!main) return;
         if(!finalData.length) { main.innerHTML = `<div class="cc-empty"><span class="msym">hourglass_top</span>Sto caricando il file dei turni…</div>`; return; }
-        ({ panoramica:renderCcOverview, modifica:renderCcEdit, bozza:renderCcDraft, importa:renderCcImport, operatori:renderCcOperators, ore:renderCcHours, reperibilita:renderCcReperibilita, coppie:renderCcPairs, note:renderCcNotes, messaggi:renderCcMessages, ferie:renderCcFerie, riportare:renderCcSync, dati:renderCcData, impostazioni:renderCcSettings })[ccSection]();
+        (({ panoramica:renderCcOverview, modifica:renderCcEdit, bozza:renderCcDraft, importa:renderCcImport, operatori:renderCcOperators, ore:renderCcHours, reperibilita:renderCcReperibilita, coppie:renderCcPairs, note:renderCcNotes, messaggi:renderCcMessages, ferie:renderCcFerie, riportare:renderCcSync, dati:renderCcData, impostazioni:renderCcSettings })[ccSection] || (window.GT_RENDER || {})[ccSection] || renderCcOverview)();
         ccUpdateNavCounts();
     }
     function ccRefreshIfOpen() {
@@ -15568,5 +15571,6 @@
         window.openRichiestePanel = function(reqId) { ensureLoaded(reqId); snapTo(0, true); };
     })();
 </script>
+<script src="generatore-turni.js"></script>
 </body>
 </html>
