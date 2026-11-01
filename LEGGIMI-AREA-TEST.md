@@ -44,7 +44,9 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   i turni vengono rigenerati da quel giorno in poi. Regola ferie: massimo 2 insieme.
   Ciclo dei turnisti a scelta: P › M › N › S › R (quello di oggi), M › P › N › S › R
   (rotazione in avanti, la reperibilità va al turnista di mattina che il giorno dopo fa il
-  pomeriggio) o 12 h G › N › S › R › R (giorno 08–20 = casella "G", notte 20–08).
+  pomeriggio) o 12 h G › N › S › R › R (giorno 08–20 = casella "G", notte 20–08; il ciclo
+  dà 33 h 36 a settimana, quindi ogni 5 settimane in turno c'è un giorno da 12 h in più sul
+  secondo riposo, dove mancano più diurnisti: si arriva a 36 h).
   Riposi dei diurnisti divisi anche sul venerdì. Dopo una notte sempre smonto e riposo,
   anche per il diurnista che la copre; mai 7 giorni di lavoro di fila.
 - **Menu rapido sotto la scritta AREA TEST** (freccia): rifà tutto l'anno con un altro
@@ -64,10 +66,10 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   | 6 h · P › M › N › S › R | 32 | 31 | 17 | 0,3 | 200 |
   | 7 h 12 · M › P › N › S › R | 47 | 30 | 22 | 3 | 186 |
   | 7 h 12 · P › M › N › S › R | 48 | 60 | 22 | 3 | 186 |
-  | 7 h 12 · turnisti 12 h | 59 | 29 | 32 | 8 | 153 |
-  | 6 h · turnisti 12 h | 52 | 0 | 26 | 5 | 167 |
+  | 7 h 12 · turnisti 12 h | 37 | 28 | 30 | 8 | 158 |
+  | 6 h · turnisti 12 h | 36 | 0 | 24 | 5 | 173 |
 
-  Con un 10° operatore i turni scoperti scendono a 1–4 l'anno (7 h 12: 1, 6 h: 3, 12 h: 6–7).
+  Con un 10° operatore i turni scoperti scendono a 1–7 l'anno (7 h 12: 1, 6 h: 3, 12 h: 4–7).
 - **Richieste dal portale**: il pannello che si apre con la freccia a destra dello schermo
   carica `richieste/` (copia del portale Richieste A.S. 118 collegata solo al Firebase
   finto tramite `firebase-modular-shim.js`, non a quello vero). Le richieste fatte lì
