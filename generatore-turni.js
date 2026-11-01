@@ -53,20 +53,35 @@
     // la reperibilità arriva alle 13 del giorno dopo: quel giorno il reperibile fa il pomeriggio
     // (o la notte, se è turnista), mai la mattina, le 12 h di giorno o un riposo
     function repNextOk(v) { return v === 'P' || v === 'p' || v === 'N'; }
-    // diurnista di mattina il giorno dopo la reperibilità: un collega diurnista di pomeriggio quel giorno
-    // con cui scambiare (la copertura resta uguale). Solo caselle messe dal generatore.
-    function mpSwapPartner(G, role, ids, nx, id) {
-        function free(c, who) { return c && !c.sub && c.gen && !c.fixed && !c.req && !c.manual && !(role[nx] && role[nx][who] === 't'); }
-        var cx = G[nx] && G[nx][id]; if (!free(cx, id) || cx.v !== 'm') return null;
-        var pv = addDays(nx, -1), af = addDays(nx, 1), best = null, bestS = Infinity;
-        ids.forEach(function (y) {
-            var cy = G[nx][y]; if (y === id || !free(cy, y) || cy.v !== 'p') return;
-            var py = G[pv] && G[pv][y], ny = G[af] && G[af][y], sc = 0;
-            if (py && !py.sub && (py.v === 'p' || py.v === 'P')) sc += 2;   // pomeriggio › mattina: riposo più corto
-            if (ny && !ny.sub && REST[ny.v]) sc -= 1;                         // mattina prima del riposo
-            if (sc < bestS) { bestS = sc; best = y; }
-        });
-        return best;
+    // versione delle regole del motore: un piano salvato con una versione più vecchia si rifà da solo all'apertura
+    // 2 = il giorno dopo la reperibilità si fa il pomeriggio (anche con scambi fra turnisti e diurnisti)
+    var ENGINE = 2;
+    // il reperibile ha la mattina (o il giorno da 12 h) il giorno dopo: come liberarla senza togliere copertura.
+    // 1) scambio con chi quel giorno è di pomeriggio (prima fra diurnisti, poi anche fra turnisti e diurnisti:
+    //    ognuno tiene il suo orario, M/P maiuscole per i turnisti); 2) se swapOnly è falso, nei giorni corti di
+    //    personale passa al pomeriggio quando i turni scoperti non aumentano. Solo caselle messe dal generatore.
+    // Ritorna le caselle da scrivere quel giorno [{ id, cell }] oppure null.
+    function repNextFix(G, ids, nx, id, countFn, covM, covP, swapOnly) {
+        function free(c) { return c && !c.sub && c.gen && !c.fixed && !c.req && !c.manual; }
+        var cx = G[nx] && G[nx][id]; if (!free(cx) || !/^(m|M|G)$/.test(cx.v)) return null;
+        if (cx.v !== 'G') {
+            var pv = addDays(nx, -1), af = addDays(nx, 1), best = null, bestS = Infinity;
+            ids.forEach(function (y) {
+                var cy = G[nx][y]; if (y === id || !free(cy) || !/^(p|P)$/.test(cy.v)) return;
+                var py = G[pv] && G[pv][y], ny = G[af] && G[af][y], sc = (cy.v === 'P') !== (cx.v === 'M') ? 3 : 0;
+                if (py && !py.sub && /^(p|P)$/.test(py.v)) sc += 2;   // pomeriggio › mattina: riposo più corto
+                if (ny && !ny.sub && REST[ny.v]) sc -= 1;              // mattina prima del riposo
+                if (sc < bestS) { bestS = sc; best = y; }
+            });
+            if (best) {
+                var cy = G[nx][best];
+                return [{ id: id, cell: Object.assign({}, cy, { v: cx.v === 'M' ? 'P' : 'p' }) }, { id: best, cell: Object.assign({}, cx, { v: cy.v === 'P' ? 'M' : 'm' }) }];
+            }
+        }
+        if (swapOnly) return null;
+        var mN = countFn(nx, isM), pN = countFn(nx, isP);
+        if (cx.v === 'G' ? mN - 1 >= covM : (mN - 1 >= covM || pN < covP)) return [{ id: id, cell: Object.assign({}, cx, { v: cx.v === 'm' ? 'p' : 'P', cov: '' }) }];
+        return null;
     }
     function isN(v) { return v === 'N' || v === 'M+N'; }
 
@@ -505,27 +520,19 @@
             var good = c.filter(function (x) { return x.next === 2; });
             if (good.length && good[0].gapOk) return good[0];
             // con lo scambio si trova anche una reperibilità non ravvicinata
-            var sw = trySwap(function (x) { return x.gapOk; }); if (sw) return sw;
+            var sw = tryFix(function (x) { return x.gapOk; }, true); if (sw) return sw;
             if (good.length) return good[0];
-            sw = trySwap(function () { return true; }); if (sw) return sw;
-            // giorno corto di personale: il diurnista passa dalla mattina al pomeriggio se i turni scoperti non aumentano
-            for (var k = 0; k < c.length; k++) {
-                var cx = G[nx][c[k].id];
-                if (c[k].next !== 1 || !cx || cx.v !== 'm' || !cx.gen || cx.fixed || cx.req || cx.manual || (role[nx] && role[nx][c[k].id] === 't')) continue;
-                if (countShift(nx, isM) - 1 < opts.covM && countShift(nx, isP) >= opts.covP) continue;
-                G[nx][c[k].id] = Object.assign({}, cx, { v: 'p', cov: '' }); c[k].next = 2; return c[k];
-            }
+            sw = tryFix(function () { return true; }, true) || tryFix(function () { return true; }, false); if (sw) return sw;
             // altrimenti meglio un riposo il giorno dopo (libero fino alle 13) che una mattina
             c.sort(function (a, b) { return a.next !== b.next ? a.next - b.next : cmp(a, b); });
             c[0].bad = true;
             return c[0];
-            function trySwap(test) {
+            function tryFix(test, swapOnly) {
                 for (var i = 0; i < c.length; i++) {
                     if (c[i].next !== 1 || !test(c[i])) continue;
-                    var y = mpSwapPartner(G, role, ids, nx, c[i].id); if (!y) continue;
-                    var tmp = G[nx][c[i].id]; G[nx][c[i].id] = G[nx][y]; G[nx][y] = tmp;
-                    if (st[c[i].id] && st[y]) { st[c[i].id].m--; st[c[i].id].p++; st[y].p--; st[y].m++; }
-                    c[i].next = 2; c[i].swapped = y; return c[i];
+                    var fx = repNextFix(G, ids, nx, c[i].id, countShift, opts.covM, opts.covP, swapOnly); if (!fx) continue;
+                    fx.forEach(function (f) { G[nx][f.id] = f.cell; });
+                    c[i].next = 2; return c[i];
                 }
                 return null;
             }
@@ -550,7 +557,7 @@
         }
 
         var plan = {
-            v: 1, year: Y, opts: opts, generatedAt: new Date().toISOString(), firstGenerated: X,
+            v: 1, engine: ENGINE, year: Y, opts: opts, generatedAt: new Date().toISOString(), firstGenerated: X,
             ops: ops.map(function (o) { return { id: o.id, name: o.name, from: o.from || '', to: o.to || '', turnFrom: o.turnFrom || '', repFrom: o.repFrom || '', added: !!o.added }; }), holidays: hol,
             cells: G, role: role, rep: rep, repFixed: repFixed, swaps: swaps, issues: issues, requests: {}
         };
@@ -801,16 +808,18 @@
                 return (count[a] || 0) - (count[b] || 0);
             });
             if (!c.length || !G[nx] || nxt(c[0]) === 2) return c[0] || null;
-            // nessuno fa già il pomeriggio il giorno dopo: un diurnista di mattina scambia con un collega di pomeriggio
-            for (var i = 0; i < c.length; i++) {
-                var y = mpSwapPartner(G, plan.role, ids, nx, c[i]); if (!y) continue;
-                var a = snap(nx, c[i]), b = snap(nx, y);
-                set(nx, c[i], b, 'pomeriggio dopo la reperibilità'); set(nx, y, a, 'scambio con ' + nameOf[c[i]]);
-                notes.push(nx + ': ' + nameOf[c[i]] + ' fa il pomeriggio (è reperibile il giorno prima), ' + nameOf[y] + ' la mattina');
+            // nessuno fa già il pomeriggio il giorno dopo: scambio con chi è di pomeriggio, o pomeriggio se non lascia buchi
+            for (var pass = 0; pass < 2; pass++) for (var i = 0; i < c.length; i++) {
+                if (nxt(c[i]) !== 1) continue;
+                var fx = repNextFix(G, ids, nx, c[i], cnt, opts.covM, opts.covP, pass === 0); if (!fx) continue;
+                fx.forEach(function (f) { set(nx, f.id, f.cell, f.id === c[i] ? 'pomeriggio dopo la reperibilità' : 'scambio con ' + nameOf[c[i]]); });
+                notes.push(nx + ': ' + nameOf[c[i]] + ' fa il pomeriggio (è reperibile il giorno prima)' + (fx[1] ? ', ' + nameOf[fx[1].id] + ' la mattina' : ''));
                 return c[i];
             }
-            notes.push(iso + ': ' + nameOf[c[0]] + ' è reperibile ma il giorno dopo non fa il pomeriggio');
-            return c[0];
+            // altrimenti meglio un riposo il giorno dopo (libero fino alle 13) che una mattina
+            var rest = c.filter(function (id) { return nxt(id) === 0; })[0], pick = rest || c[0];
+            notes.push(iso + ': ' + nameOf[pick] + ' è reperibile ma il giorno dopo non fa il pomeriggio');
+            return pick;
         }
     }
     function revertChanges(plan, changes) {
@@ -1088,7 +1097,7 @@
         { cat: 'diurnisti', k: 'mBeforeRest', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
         { cat: 'diurnisti', k: 'altMP', t: 'Alternanza mattina e pomeriggio', d: 'Dopo un pomeriggio una mattina e viceversa, invece di tanti giorni uguali di fila. La regola precedente ha la precedenza.' },
         { cat: 'rep', k: 'eqRep', t: 'Reperibilità divise in modo equo', d: 'Va a chi ne ha fatte meno (i festivi si contano a parte), fra chi è di mattina quel giorno.' },
-        { cat: 'rep', fixed: 'repNext', t: 'Il giorno dopo la reperibilità si fa il pomeriggio', d: 'La reperibilità arriva alle 13 del giorno dopo: quel giorno il reperibile fa il pomeriggio (il turnista anche la notte), mai la mattina. Se nessuno è già di pomeriggio, un diurnista scambia la mattina con un collega. Vale anche per le coperture automatiche.' },
+        { cat: 'rep', fixed: 'repNext', t: 'Il giorno dopo la reperibilità si fa il pomeriggio', d: 'La reperibilità arriva alle 13 del giorno dopo: quel giorno il reperibile fa il pomeriggio (il turnista anche la notte), mai la mattina. Se nessuno è già di pomeriggio, scambia la mattina con un collega di pomeriggio (diurnista o turnista, la copertura resta uguale). Vale anche per le coperture automatiche e per la ruota Auto. Un anno generato prima di questa regola si rifà da solo all’apertura.' },
         { cat: 'rep', k: 'repGap', t: 'Reperibilità non ravvicinate', gap: true },
         { cat: 'equita', k: 'eqOp', t: 'Equità fra tutti gli operatori', d: 'Stesse ore, notti, weekend liberi e turni di mattina e pomeriggio: chi ne ha avuti meno passa avanti.' },
         { cat: 'equita', k: 'eqFest', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
@@ -1617,6 +1626,19 @@
         if (Object.keys(upd).length) await repDocRef().set({ turni: upd }, { merge: true });
         return Object.keys(upd).length;
     }
+    // anno generato con regole vecchie (es. prima della regola sulla reperibilità): si rifà con le stesse scelte
+    // (modello, ciclo, assenze simulate); le caselle cambiate a mano nel calendario restano
+    async function upgradeOldPlan() {
+        if (!GT.opts) loadOpts();
+        var y = GT.opts.year, p = await loadPlan(y);
+        if (!p || (p.engine || 1) >= ENGINE) return false;
+        var keep = GT.opts;
+        GT.opts = Object.assign({}, keep, mergeOpts(p.opts), { year: y });
+        try { await gtGenerate(null, true); } finally { GT.opts = keep; }
+        if (!GT.plan || (GT.plan.engine || 1) < ENGINE) return false;
+        setTimeout(function () { toast('Il ' + y + ' è stato rifatto con le regole nuove: il giorno dopo la reperibilità si fa sempre il pomeriggio.'); }, 1500);
+        return true;
+    }
     async function afterBoot() {
         quickBar(); autoBtn();
         loadAutoCov(SHIFT_YEAR).then(function () { if (Object.keys(GT.autoCov[SHIFT_YEAR] || {}).length && typeof renderTable === 'function' && finalData && finalData.length) renderTable(); });
@@ -1626,6 +1648,7 @@
         if (typeof updateYearUi === 'function') updateYearUi();
         var rw = null, sc = null; try { rw = sessionStorage.getItem('gt_rewrite'); sc = sessionStorage.getItem('gt_scroll'); sessionStorage.removeItem('gt_rewrite'); sessionStorage.removeItem('gt_scroll'); } catch (e) {}
         if (rw) { var p = await loadPlan(+rw); if (p) { try { await writePlanToCalendar(p); } catch (e) { console.error(e); } } if (typeof dataSourceMode !== 'undefined' && dataSourceMode === 'firebase' && activeYear !== +rw) { try { localStorage.setItem('gt_work_year', rw); } catch (e) {} location.reload(); return; } }
+        try { await upgradeOldPlan(); } catch (e) { console.error(e); }
         if (typeof renderTable === 'function' && finalData && finalData.length) renderTable();
         if (sc) setTimeout(function () { gtScrollTo(sc); }, 800);
         var tt = null; try { tt = sessionStorage.getItem('gt_toast'); sessionStorage.removeItem('gt_toast'); } catch (e) {}

@@ -53,9 +53,14 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   anche per il diurnista che la copre; mai 7 giorni di lavoro di fila.
   Reperibilità (regola fissa): arriva alle 13 del giorno dopo, quindi quel giorno il
   reperibile fa il pomeriggio (o la notte), mai la mattina. Se nessuno è già di pomeriggio
-  il giorno dopo, un diurnista scambia la mattina con un collega di pomeriggio; nei giorni
-  con troppe assenze resta segnalato (con i 12 h meno di una volta l'anno). Vale anche
-  per le coperture automatiche, e il controllo "!" del calendario segue la stessa regola.
+  il giorno dopo, scambia la mattina con un collega di pomeriggio (diurnista o turnista,
+  ognuno col suo orario: la copertura resta uguale); nei giorni corti passa al pomeriggio
+  se i buchi non aumentano. Con P›M›N e M›P›N non resta nessun caso; con i 12 h resta
+  solo nei giorni in cui l'unico disponibile il giorno dopo fa il giorno da 12 h (circa
+  una volta l'anno con le assenze), segnalato. Vale anche per le coperture automatiche
+  e la ruota Auto; il controllo "!" del calendario segue la stessa regola. I piani hanno
+  una versione del motore (`engine`): un anno generato con regole più vecchie si rifà da
+  solo all'apertura dell'app, con le stesse scelte e assenze simulate.
 - **Modifiche automatiche dalla ruota** (Modifica turni › barra sopra la ruota › "Auto"):
   con l'interruttore acceso, mettendo un'assenza su un turno il sostituto si trova da solo
   con le regole del generatore ("copertura turno di …", notte con smonto e riposo,
