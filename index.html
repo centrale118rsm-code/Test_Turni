@@ -4017,12 +4017,16 @@
     const DIURNI_FROM = [ { from: '2026-10-05', m: '07:00 - 13:00', p: '13:00 - 19:00' } ];
     const DIURNI6_FROM = '2026-10-05';
     let fmtDateCtx = null;   // giorno della riga che si sta disegnando (per gli orari dei diurnisti)
+    // AREA TEST: mentre si guardano i turni generati valgono gli orari del modello scelto (6 h o 7 h 12)
+    function gtViewModel() { return (window.GT && GT.yearModel && isViewingArchive() && GT.yearModel[SHIFT_YEAR]) || null; }
+    function gtYears() { return (window.GT && GT.calYears) || []; }
     function diurniSched(code, when) {
         code = String(code || '').toLowerCase();
         let t = SCHEDULE_DIURNI[code];
         if(code !== 'm' && code !== 'p') return t;
         const iso = !when ? ymd(new Date()) : (typeof when === 'string' ? when : ymd(when));
         DIURNI_FROM.forEach(p => { if(iso >= p.from && p[code]) t = p[code]; });
+        const gm = gtViewModel(); if(gm && gm[code]) t = gm[code];
         return t;
     }
 
@@ -5645,7 +5649,7 @@
     }
     function menuTree() {
         const dark = document.body.classList.contains('dark-mode');
-        const hasYears = typeof dataSourceMode !== 'undefined' && dataSourceMode === 'firebase' && archivedYears.length > 0;
+        const hasYears = typeof dataSourceMode !== 'undefined' && ((dataSourceMode === 'firebase' && archivedYears.length > 0) || gtYears().length > 0);
         return [
             { group:'Per te' },
             { id:'me', icon:'person', label:'La mia pagina', desc: (userIdentity && userIdentity !== 'Ospite') ? 'Prossimi turni, ore, assenze, reperibilit\u00e0' : 'Scegli prima chi sei', color:'#1d4ed8', run: () => openMyPage() },
@@ -5656,7 +5660,7 @@
                 { id:'month', icon:'event', label:'Vai a un mese', desc:'Scegli il mese da vedere', color: MN_COLORS.cal, run: () => toggleMonthDropdown() },
                 { id:'filter', icon:'groups', label:'Filtra operatori', desc:'Mostra solo alcuni colleghi', color: MN_COLORS.cal, run: () => toggleDriverFilterDropdown() },
                 { id:'print', icon:'print', label:'Stampa del mese', desc:'PDF dei turni per la bacheca', color: MN_COLORS.cal, run: () => printMonthPick() },
-                hasYears ? { id:'years', icon:'history', label:'Anni passati', desc:'Consulta gli anni archiviati (sola lettura)', color: MN_COLORS.cal, run: () => openYearPicker() } : null
+                hasYears ? { id:'years', icon:'history', label: gtYears().length ? 'Anni' : 'Anni passati', desc: gtYears().length ? 'Anni passati e anni generati (sola lettura)' : 'Consulta gli anni archiviati (sola lettura)', color: MN_COLORS.cal, run: () => openYearPicker() } : null
             ] },
             { id:'view', icon: calOverview ? 'view_agenda' : 'grid_view', label: calOverview ? 'Vista dettagliata' : 'Vista d’insieme', desc: calOverview ? 'Torna al calendario giorno per giorno' : 'Tutto l’anno a colpo d’occhio', color: MN_COLORS.cal, run: () => toggleCalView() },
             { id:'ferie', icon:'beach_access', label:'Ferie e permessi', desc:'Quando prenderli: giorni e periodi consigliati', color:'#16a34a', run: () => openFerieAdvice() },
@@ -5678,8 +5682,6 @@
             ] },
             { group:'Gestione' },
             { id:'coord', icon:'supervisor_account', label:'Area coordinatore', desc:'Accesso riservato', color: MN_COLORS.coord, lock:true, run: () => openCoordLoginModal() },
-            { id:'gtcal', icon:'event_upcoming', label:'Turni generati (area test)', desc:'Apre nel calendario l\u2019anno creato dal generatore', color: MN_COLORS.coord, run: () => window.GT && GT.openCalendarPicker() },
-            { id:'gtportal', icon:'assignment', label:'Portale richieste (prova)', desc:'Manda una richiesta finta al coordinatore', color: MN_COLORS.link, run: () => window.open('portale-richieste.html', '_blank') },
             { id:'admin', icon:'admin_panel_settings', label:'Area admin', desc:'Accesso riservato', color: MN_COLORS.admin, lock:true, run: () => openAdminLoginModal() },
             { group:'App' },
             { id:'imp', icon:'tune', label:'Impostazioni', desc:'Tema, notifiche, utente, aggiornamento', color: MN_COLORS.imp, children: [
@@ -6385,6 +6387,7 @@
     // a ÷ 5 dal lunedì al venerdì. Diurnista o turnista si capisce dai turni vicini (m/p/r minuscoli).
     function isDiurnoDay(rowIdx, colIdx) {
         const iso = repRowDate(rowIdx); if(!iso || iso < DIURNI6_FROM) return false;
+        { const gm = gtViewModel(); if(gm && !gm.six) return false; }
         const kind = r => {
             const c = finalData[r] && finalData[r][colIdx]; if(!c) return null;
             const v = (c.v || '').toString().split('/')[0].trim();
@@ -11790,7 +11793,7 @@
     }
     function returnToActiveYear() {
         if(!isViewingArchive()) return;
-        const b = ccArchiveBackup; ccArchiveBackup = null; if(window.GT) GT.viewing = null;
+        const b = ccArchiveBackup; ccArchiveBackup = null;
         finalData = b.finalData; rawFinalData = b.rawFinalData; drivers = b.drivers; operatorConfig = b.operatorConfig;
         excelParsedData = b.excelParsedData; selectedDrivers = b.selectedDrivers; setShiftYear(b.SHIFT_YEAR);
         applyManualOverrides();
@@ -11808,13 +11811,13 @@
     }
     function updateYearUi() {
         const item = document.getElementById('menu-year-picker');
-        if(item) item.style.display = (dataSourceMode === 'firebase' && archivedYears.length) ? '' : 'none';
+        if(item) item.style.display = ((dataSourceMode === 'firebase' && archivedYears.length) || gtYears().length) ? '' : 'none';
         const banner = document.getElementById('year-banner');
         if(banner) {
             const on = isViewingArchive();
             banner.style.display = on ? 'flex' : 'none';
-            if(on) document.getElementById('year-banner-text').textContent = (window.GT && GT.viewing === SHIFT_YEAR)
-                ? `AREA TEST · turni ${SHIFT_YEAR} generati (sola lettura) · tocca per tornare al ${activeYear}`
+            if(on) document.getElementById('year-banner-text').textContent = gtYears().includes(SHIFT_YEAR)
+                ? `Stai guardando il ${SHIFT_YEAR} generato (sola lettura) · tocca per tornare al ${activeYear}`
                 : `Stai guardando il ${SHIFT_YEAR} (sola lettura) · tocca per tornare al ${activeYear}`;
             document.documentElement.style.setProperty('--header-h', on ? 'calc(var(--header-base-h) + var(--safe-top) + 34px)' : 'calc(var(--header-base-h) + var(--safe-top))');
         }
@@ -11829,9 +11832,10 @@
     async function openYearPicker() {
         const m = document.getElementById('menu-dropdown'); if(m && m.style.display === 'flex') toggleMenu();
         const shown = SHIFT_YEAR;
-        const years = [activeYear].concat(archivedYears.filter(y => y !== activeYear).sort((a, b) => b - a));
-        const choice = await ccDialog('Anni', 'Scegli l’anno da consultare. Gli anni passati sono in sola lettura.',
-            years.map(y => ({ label: `${y}${y === activeYear ? ' · attuale' : ''}${y === shown ? ' ✓' : ''}`, kind: y === activeYear ? 'primary' : '', value: String(y) })).concat([{ label:'Chiudi', kind:'ghost', value:null }]));
+        const gy = gtYears().filter(y => y !== activeYear);
+        const years = gy.slice().sort((a, b) => b - a).concat([activeYear], archivedYears.filter(y => y !== activeYear && !gy.includes(y)).sort((a, b) => b - a));
+        const choice = await ccDialog('Anni', 'Scegli l’anno da consultare. Gli anni diversi da quello attuale sono in sola lettura.',
+            years.map(y => ({ label: `${y}${y === activeYear ? ' · attuale' : ''}${gy.includes(y) ? ' · generato' : ''}${y === shown ? ' ✓' : ''}`, kind: y === activeYear ? 'primary' : '', value: String(y) })).concat([{ label:'Chiudi', kind:'ghost', value:null }]));
         if(choice) switchToYear(choice);
     }
 
@@ -15495,7 +15499,7 @@
         const iframe = document.getElementById('richieste-iframe');
         if (!handle || !panel || !iframe) return;
 
-        const RICHIESTE_URL = "https://centrale118rsm-code.github.io/Richieste-A.S.-118/";
+        const RICHIESTE_URL = "richieste/";   // AREA TEST: copia del portale collegata al Firebase finto (non quello vero)
         let iframeLoaded = false;
         let iframeLoadedIdentity = undefined; // identità con cui l'iframe è stato caricato l'ultima volta
         let dragging = false;
@@ -15512,7 +15516,7 @@
             // operatore. Se l'identità cambia (es. dopo "Cambia Utente"), l'iframe viene
             // ricaricato con la nuova identità la prossima volta che si apre il pannello.
             if (!iframeLoaded || iframeLoadedIdentity !== identity) {
-                const url = new URL(RICHIESTE_URL);
+                const url = new URL(RICHIESTE_URL, location.href);
                 if (identity) url.searchParams.set('nome', identity);
                 if (reqId) url.searchParams.set('richiesta', reqId);
                 iframe.src = url.toString();

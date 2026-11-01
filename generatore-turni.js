@@ -25,8 +25,8 @@
     var REST = { R: 1, r: 1 };
     var MINUTES = { M: 405, P: 445, N: 255, S: 440, 'M+N': 660 };
     var MODELS = {
-        '7h12': { label: '7 h 12 al giorno', rests: 2, dayMin: 432, workDays: 5, m: '06:30–13:42', p: '13:15–20:27', contractDow: [1, 2, 3, 4, 5] },
-        '6h': { label: '6 h al giorno', rests: 1, dayMin: 360, workDays: 6, m: '07:00–13:00', p: '13:00–19:00', contractDow: [1, 2, 3, 4, 5, 6] }
+        '7h12': { label: '7 h 12 al giorno', rests: 2, dayMin: 432, workDays: 5, m: '06:30–13:42', p: '13:15–20:27', contractDow: [1, 2, 3, 4, 5], cal: { m: '06:30 - 13:42', p: '13:15 - 20:27' } },
+        '6h': { label: '6 h al giorno', rests: 1, dayMin: 360, workDays: 6, m: '07:00–13:00', p: '13:00–19:00', contractDow: [1, 2, 3, 4, 5, 6], cal: { m: '07:00 - 13:00', p: '13:00 - 19:00', six: true } }
     };
     var WEEK_MIN = 2160;   // 36 h
 
@@ -701,6 +701,7 @@
     async function savePlan() {
         if (!GT.plan) return;
         await planDoc(GT.plan.year).set({ json: JSON.stringify(GT.plan), updatedAt: new Date().toISOString() });
+        try { await writePlanToCalendar(GT.plan); } catch (e) { console.error(e); toast('Piano salvato, ma non sono riuscito a scriverlo nel calendario: ' + e.message, true); }
     }
     async function loadExtraAbs(year) {
         try { var s = await absDoc(year).get(); return s.exists ? (s.data().list || []) : []; } catch (e) { return []; }
@@ -771,8 +772,9 @@
     }
     async function gtClear() {
         if (!GT.plan) return;
-        var ok = await ccConfirm('Cancellare il piano del ' + GT.plan.year + '?', 'Si cancella solo il piano generato nell\u2019area test. Il calendario non cambia.', 'Cancella', 'solid-danger');
+        var ok = await ccConfirm('Cancellare il piano del ' + GT.plan.year + '?', 'Si cancella il piano e il ' + GT.plan.year + ' sparisce dal calendario (i turni già compilati del ' + (GT.plan.year - 1) + ' restano).', 'Cancella', 'solid-danger');
         if (!ok) return;
+        try { await removePlanFromCalendar(GT.plan); } catch (e) { console.error(e); }
         await planDoc(GT.plan.year).delete(); GT.plan = null; renderGen();
     }
 
@@ -1019,7 +1021,7 @@
             '<div class="gt-year">' + years.map(function (y) { return '<button class="' + (o.year === y ? 'on' : '') + '" onclick="GT.setYear(' + y + ')">' + y + '</button>'; }).join('') + '</div></div>' +
             '<div class="gt-pre"><span class="msym">' + (pre.days ? 'event_upcoming' : 'info') + '</span><span>' + (pre.days ? 'Nel calendario il ' + o.year + ' ha già <b>' + pre.days + ' giorni compilati</b> (fino al ' + fmtDay(pre.last) + '): il generatore parte da lì e li lascia com\u2019erano.' : 'Nel calendario il ' + o.year + ' è vuoto: il generatore parte dagli ultimi turni dell\u2019anno prima, se ci sono.') + '</span></div>' +
             '<div class="gt-actions"><button class="cc-btn primary" onclick="GT.generate()" ' + (GT.busy ? 'disabled' : '') + '><span class="msym">edit_calendar</span>' + (GT.plan ? 'Rigenera il ' : 'Genera il ') + o.year + '</button>' +
-            (GT.plan ? '<button class="cc-btn primary" onclick="GT.showInCalendar(' + o.year + ')"><span class="msym">calendar_month</span>Apri il ' + o.year + ' nel calendario</button><button class="cc-btn" onclick="GT.goCalendar()"><span class="msym">table_view</span>Anteprima qui sotto</button><button class="cc-btn danger" onclick="GT.clear()"><span class="msym">delete</span>Cancella piano</button>' : '') +
+            (GT.plan ? '<button class="cc-btn primary" onclick="GT.showInCalendar(' + o.year + ')"><span class="msym">calendar_month</span>Vedi il ' + o.year + ' nel calendario</button><button class="cc-btn" onclick="GT.goCalendar()"><span class="msym">table_view</span>Anteprima qui sotto</button><button class="cc-btn danger" onclick="GT.clear()"><span class="msym">delete</span>Cancella piano</button>' : '') +
             '<button class="cc-btn ghost" onclick="ccGo(\'richiestetest\')"><span class="msym">inventory_2</span>Richieste dal portale</button></div>' +
             '</div></div>' +
             '<div class="cc-panel"><div class="cc-panel-head"><h3>Regole del generatore</h3><span class="cc-hint">valgono per ogni generazione · si attivano e disattivano qui</span></div><div class="gt-rules">' +
@@ -1045,7 +1047,7 @@
         if (GT.reqUnsub || typeof db === 'undefined' || !db) return;
         try {
             GT.reqUnsub = db.collection('richieste_turni').onSnapshot(function (snap) {
-                GT.reqs = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }).filter(function (r) { return r.test; })
+                GT.reqs = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); })
                     .sort(function (a, b) { return String(b.timestamp || '').localeCompare(String(a.timestamp || '')); });
                 var n = GT.reqs.filter(function (r) { return !r.gestione && !r.obscured; }).length;
                 var el = document.getElementById('cc-count-gtreq'); if (el) el.textContent = n ? n : '';
@@ -1125,7 +1127,7 @@
     function reqView(id) {
         var r = GT.reqs.filter(function (x) { return x.id === id; })[0];
         var d = r && (r.repDate || r.dateFrom); if (d) { GT.opts.year = Number(d.slice(0, 4)); GT.month = Number(d.slice(5, 7)) - 1; saveOpts(); }
-        GT.showInCalendar(GT.opts.year).then(function () { if (d) setTimeout(function () { try { var r = repRowOfDate(d); var td = r && document.querySelector('td[data-row="' + r + '"]'); if (td) td.scrollIntoView({ block: 'center' }); } catch (e) {} }, 500); });
+        GT.showInCalendar(GT.opts.year, d);
     }
 
     // ── azioni ──
@@ -1150,58 +1152,90 @@
     GT.setFilter = function (f) { GT.filter = f; renderReqs(); };
     GT.reqHandle = reqHandle; GT.reqUndo = reqUndo; GT.reqView = reqView;
 
-    // ── l'anno generato nel calendario principale (sola lettura, come gli anni passati) ──
-    GT.viewing = null;
-    GT.showInCalendar = async function (year) {
+    // ── l'anno generato nel calendario solito ──
+    // Il piano viene scritto dove l'app tiene gli anni (documenti "turni_AAAA-MM" + "anno_AAAA"):
+    // l'anno compare nel selettore anni (menu › Calendario › Anni), in sola lettura come gli anni
+    // passati, e a capodanno diventa l'anno attivo con questi turni. Tutto nel Firebase finto.
+    GT.calYears = []; GT.yearModel = {}; GT.covMap = {};
+    function planCovMap(p) { var m = {}; Object.keys(p.cells).forEach(function (iso) { Object.keys(p.cells[iso]).forEach(function (id) { var c = p.cells[iso][id]; if (c && c.cov && !c.off) m[iso + '|' + id] = c.cov; }); }); return m; }
+    function rememberYear(p) {
+        var y = p.year, mk = MODELS[(p.opts && p.opts.model)] ? p.opts.model : '7h12';
+        if (GT.calYears.indexOf(y) < 0) GT.calYears.push(y);
+        GT.calYears.sort(); GT.yearModel[y] = MODELS[mk].cal; GT.covMap[y] = planCovMap(p);
+    }
+    async function writePlanToCalendar(p) {
+        if (!p || typeof cfgRef !== 'function') return;
+        var y = p.year, ids = p.ops.map(function (o) { return o.id; }), months = [], now = new Date().toISOString();
+        for (var m = 0; m < 12; m++) months.push({});
+        Object.keys(p.cells).forEach(function (iso) {
+            if (iso.slice(0, 4) !== String(y)) return;
+            var mi = Number(iso.slice(5, 7)) - 1, dn = Number(iso.slice(8, 10)), mName = Object.keys(MONTH_MAP)[mi];
+            ids.forEach(function (id) {
+                var c = p.cells[iso][id]; if (!c || c.off || (!c.v && !c.sub)) return;
+                months[mi][id + '__' + mName + '-' + dn] = { v: c.sub ? (c.v || '') : c.v, subV: c.sub || '' };
+            });
+        });
+        var batch = db.batch();
+        months.forEach(function (cells, mi) { batch.set(cfgRef(monthDocName(y, mi)), { cells: cells, updatedAt: now, source: 'generatore' }); });
+        var names = {}; p.ops.forEach(function (o) { if (o.name && o.name !== o.id) names[o.id] = o.name; });
+        batch.set(cfgRef('anno_' + y), { year: y, baseNames: ids, contract: (operatorConfig && operatorConfig.contract) || {}, allow: {}, removed: {}, nameOverrides: Object.assign({}, typeof nameOverrides !== 'undefined' ? nameOverrides : {}, names), generated: true, model: (p.opts && p.opts.model) || '7h12', generatedAt: now });
+        // reperibilità dei giorni generati (quelle dei giorni già compilati restano come sono)
+        var rep = {}; Object.keys(p.rep || {}).forEach(function (iso) { if (iso.slice(0, 4) === String(y) && iso >= p.firstGenerated) rep[iso] = p.rep[iso]; });
+        if (Object.keys(rep).length) batch.set(repDocRef(), { turni: rep, updatedAt: now }, { merge: true });
+        await batch.commit();
+        rememberYear(p);
+    }
+    async function removePlanFromCalendar(p) {
+        var y = p.year, batch = db.batch(), del = firebase.firestore.FieldValue.delete(), rep = {};
+        for (var m = 0; m < 12; m++) batch.delete(cfgRef(monthDocName(y, m)));
+        batch.delete(cfgRef('anno_' + y));
+        Object.keys(p.rep || {}).forEach(function (iso) { if (iso.slice(0, 4) === String(y) && iso >= p.firstGenerated) rep[iso] = del; });
+        if (Object.keys(rep).length) batch.set(repDocRef(), { turni: rep }, { merge: true });
+        await batch.commit();
+        GT.calYears = GT.calYears.filter(function (x) { return x !== y; }); delete GT.covMap[y];
+    }
+    async function loadCalYears() {
+        var base = typeof activeYear !== 'undefined' ? activeYear : SHIFT_YEAR;
+        for (var y = base + 1; y <= base + 3; y++) {
+            try {
+                var d = await cfgRef('anno_' + y).get(); if (!d.exists || !d.data().generated) continue;
+                var p = await planDoc(y).get();
+                if (p.exists && p.data().json) rememberYear(JSON.parse(p.data().json)); else { if (GT.calYears.indexOf(y) < 0) GT.calYears.push(y); GT.yearModel[y] = (MODELS[d.data().model] || MODELS['7h12']).cal; }
+            } catch (e) { console.error(e); }
+        }
+    }
+    GT.showInCalendar = async function (year, iso) {
         year = year || GT.opts.year;
         var p = await loadPlan(year);
         if (!p) { toast('Prima genera i turni del ' + year + '.', true); return; }
-        if (typeof coordEditModeActive !== 'undefined' && coordEditModeActive) { var ok = await exitCoordEdit(true); if (!ok) return; }
-        if (!isViewingArchive()) ccArchiveBackup = { finalData: finalData, rawFinalData: rawFinalData, drivers: drivers, operatorConfig: operatorConfig, excelParsedData: excelParsedData, SHIFT_YEAR: SHIFT_YEAR, selectedDrivers: selectedDrivers };
-        var names = p.ops.map(function (o) { return o.id; });
-        setShiftYear(year);
-        var data = buildBlankYearData(year, names, 0);
-        for (var r = 1; r < data.length; r++) {
-            var mi = MONTH_MAP[data[r][0].v], iso = year + '-' + pad(mi + 1) + '-' + pad(data[r][1].v), row = p.cells[iso] || {};
-            names.forEach(function (id, i) {
-                var c = row[id]; if (!c || c.off) return;
-                var v = c.sub ? (c.v || '') : c.v;
-                if (p.rep[iso] === id) v = (v || (c.sub ? '' : 'M')) + '/R';
-                data[r][i + 3] = { v: v, subV: c.sub || '', supV: '', gtCov: c.cov || '' };
-            });
-        }
-        excelParsedData = data;
-        rawFinalData = JSON.parse(JSON.stringify(data));
-        finalData = JSON.parse(JSON.stringify(data));
-        drivers = p.ops.map(function (o, i) { return { name: o.name, idx: i + 3, originalName: o.id, virtual: false, hidden: false }; });
-        operatorConfig = normalizeOperatorConfig({ contract: {}, allow: {}, baseNames: names });
-        selectedDrivers = new Set();
-        GT.viewing = year;
+        if (GT.calYears.indexOf(year) < 0) await writePlanToCalendar(p);
         if (typeof closeCoordConsole === 'function') closeCoordConsole();
-        refreshAfterYearSwitch();
-        var firstGen = Object.keys(p.cells).sort().find(function (iso) { var row = p.cells[iso]; return Object.keys(row).some(function (k) { return row[k] && row[k].gen; }); });
-        setTimeout(function () { try { var rr = firstGen ? repRowOfDate(firstGen) : 1; var td = document.querySelector('td[data-row="' + (rr || 1) + '"]'); if (td) td.scrollIntoView({ block: 'start' }); else scrollToToday(); } catch (e) {} }, 600);
-        toast('Turni ' + year + ' generati: li vedi nel calendario. Tocca la barra in alto per tornare al ' + activeYear + '.');
+        await switchToYear(year);
+        var target = iso || p.firstGenerated;
+        setTimeout(function () { try { var rr = repRowOfDate(target); var td = rr && document.querySelector('td[data-row="' + rr + '"]'); if (td) td.scrollIntoView({ block: iso ? 'center' : 'start' }); } catch (e) {} }, 700);
     };
-    GT.openCalendarPicker = async function () {
-        if (typeof closeMenu === 'function') try { closeMenu(); } catch (e) {}
-        var years = [], base = isViewingArchive() && ccArchiveBackup ? ccArchiveBackup.SHIFT_YEAR : SHIFT_YEAR;
-        for (var y = base; y <= base + 2; y++) { try { var d = await planDoc(y).get(); if (d.exists) years.push(y); } catch (e) {} }
-        if (!years.length) { alert('Nessun anno generato. Generalo da Area coordinatore › Generazione turni.'); return; }
-        var choice = await ccDialog('Turni generati (area test)', 'Scegli l’anno da aprire nel calendario. Si vede in sola lettura; per cambiarlo usa Generazione turni.',
-            years.map(function (y) { return { label: String(y), kind: 'primary', value: y }; }).concat([{ label: 'Chiudi', kind: 'ghost', value: null }]));
-        if (choice) GT.showInCalendar(choice);
-    };
-    function leaveGenView() { if (GT.viewing && typeof returnToActiveYear === 'function') returnToActiveYear(); }
+    // "copertura turno di …" sulle caselle dell'anno generato
+    function decorateCov() {
+        try {
+            var map = GT.covMap[SHIFT_YEAR]; if (!map || !finalData || !finalData.length) return;
+            var head = finalData[0].map(function (h) { return (h && h.v !== undefined ? h.v : h); });
+            Object.keys(map).forEach(function (k) {
+                var i = k.indexOf('|'), iso = k.slice(0, i), id = k.slice(i + 1), r = repRowOfDate(iso), c = head.indexOf(id);
+                if (r && c >= 3 && finalData[r][c]) finalData[r][c].gtCov = map[k];
+            });
+        } catch (e) {}
+    }
+    if (typeof renderTable === 'function') { var _rt = renderTable; renderTable = function () { decorateCov(); return _rt.apply(this, arguments); }; }
+    function leaveGenView() { if (typeof isViewingArchive === 'function' && isViewingArchive() && typeof returnToActiveYear === 'function') returnToActiveYear(); }
 
     // ── aggancio alla console ──
     window.GT_RENDER = { generazione: function () { leaveGenView(); renderGen(); }, richiestetest: function () { leaveGenView(); renderReqs(); } };
     if (typeof CC_SECTIONS !== 'undefined') {
         CC_SECTIONS.generazione = { title: 'Generazione turni', sub: 'Crea i turni di un anno intero seguendo regole fisse, partendo da quelli già compilati. Solo area test.' };
-        CC_SECTIONS.richiestetest = { title: 'Richieste dal portale', sub: 'Ferie, permessi e cambi mandati dal portale di prova: gestiscili a mano o in automatico.' };
+        CC_SECTIONS.richiestetest = { title: 'Richieste dal portale', sub: 'Ferie, permessi e cambi mandati dal portale richieste (freccia a destra dello schermo): gestiscili a mano o in automatico.' };
     }
     loadOpts();
-    function startListen() { if (typeof fbReady !== 'undefined' && fbReady && typeof db !== 'undefined' && db) listenReqs(); else setTimeout(startListen, 1500); }
+    function startListen() { if (typeof fbReady !== 'undefined' && fbReady && typeof db !== 'undefined' && db) { listenReqs(); loadCalYears().then(function () { if (typeof updateYearUi === 'function') updateYearUi(); }); } else setTimeout(startListen, 1500); }
     startListen();
 
     // ── stile ──
