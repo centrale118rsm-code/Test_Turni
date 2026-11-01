@@ -41,7 +41,9 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   Orari dei diurnisti nel calendario secondo il modello: 6h 07–13 / 13–19,
   7h12 06:30–13:42 / 13:15–20:27. Operatori: si aggiungono (inizio, durata in settimane
   o mesi, affiancamento prima di turni e reperibilità) e si tolgono da una data;
-  i turni vengono rigenerati da quel giorno in poi. Regola ferie: massimo 2 insieme.
+  i turni vengono rigenerati da quel giorno in poi. Gli operatori aggiunti (qui o dal menu
+  rapido) compaiono come colonne nel calendario dell'anno generato; la lista operatori
+  dell'app non cambia. Regola ferie: massimo 2 insieme.
   Ciclo dei turnisti a scelta: P › M › N › S › R (quello di oggi), M › P › N › S › R
   (rotazione in avanti, la reperibilità va al turnista di mattina che il giorno dopo fa il
   pomeriggio) o 12 h G › N › S › R › R (giorno 08–20 = casella "G", notte 20–08; il ciclo
@@ -56,6 +58,9 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   permessi legge), mai più di 2 assenti insieme; "con cambio ferie" aggiunge 2 giorni in cui
   due periodi di ferie finiscono e lo stesso giorno ne parte un terzo (3 assenti).
   Le assenze simulate stanno in `test_generatore/simassenze_<anno>` e si tolgono dal menu.
+  "Aggiungi un operatore" mette NUOVO 1, NUOVO 2… in servizio da tutto l'anno, senza
+  affiancamento né scadenza (subito turni e reperibilità); "Togli" leva l'ultimo aggiunto,
+  "Togli tutti" li leva tutti. Stanno in `test_generatore/operatori` con `quick: true`.
   "Schema consigliato" = turnisti M › P › N › S › R, diurnisti 6 h, riposi anche il venerdì.
 
   Confronto (2027, assenze simulate come nel 2026, media di 8 anni casuali, 9 operatori):
