@@ -2297,6 +2297,10 @@
         .tw-bar-sizes button { width:26px; height:30px; border:none; border-radius:4px; background:transparent; color:var(--cc-ink-muted); font:600 12px/1 var(--cc-font); cursor:pointer; padding:0; }
         .tw-bar-sizes button:hover { background:var(--cc-ink-2); color:#fff; }
         .tw-bar-sizes button.on { background:#fff; color:var(--cc-ink); }
+        /* AREA TEST: interruttore delle modifiche automatiche */
+        .tw-bar-btn.tw-auto { width:auto; padding:0 8px 0 6px; gap:4px; font:600 12px/1 var(--cc-font); }
+        .tw-bar-btn.tw-auto.on { background:#16a34a; }
+        .tw-bar-btn.tw-auto.on:hover { background:#15803d; }
 
         /* ══ Report reperibilità ═══════════════════════════════════════════ */
         .rr-table th.rr-day, .rr-table td.rr-day { padding:6px 4px; min-width:30px; text-align:center; font-variant-numeric:tabular-nums; }
@@ -4204,8 +4208,10 @@
             const who = R.tit[ymd(dd.date)]; if(!who || !days[i + 1]) return;
             const d = active.find(x => x.originalName === who); if(!d) return;
             const c = workCode(dd.rowIdx, d.idx), n = workCode(days[i + 1].rowIdx, d.idx);
-            if(c === 'M' && n && n !== 'N') flag(days[i + 1].rowIdx, d.idx, 'dopo la reperibilità il turnista dovrebbe fare la notte');
-            else if(c === 'm' && n && n !== 'p') flag(days[i + 1].rowIdx, d.idx, 'dopo la reperibilità il diurnista dovrebbe fare il pomeriggio');
+            // AREA TEST: la reperibilità arriva alle 13 del giorno dopo, quindi quel giorno pomeriggio (P o p) o notte,
+            // per turnisti e diurnisti (anche il diurnista che il giorno dopo entra in turno con il pomeriggio)
+            if(c && c !== 'N' && c !== 'SM' && n && !['p', 'P', 'N'].includes(n))
+                flag(days[i + 1].rowIdx, d.idx, /^(m|M|G|M\+N)$/.test(n) ? 'dopo la reperibilità si fa il pomeriggio (o la notte), non la mattina' : 'dopo la reperibilità si fa il pomeriggio (o la notte)');
         });
         // diurnisti: 2 riposi a settimana (solo settimane lun–dom intere da diurnista, senza assenze)
         active.forEach(d => {
@@ -13228,7 +13234,10 @@
     function coordOnPointerUp() {
         if(!coordPainting) return;
         coordPainting = false;
-        if(coordPaintBatchEntries.length) { pushUndo({ entries: coordPaintBatchEntries }); vibrate(); draftSaveSoon(); }
+        if(coordPaintBatchEntries.length) {
+            const auto = typeof gtAutoAfterEdit === 'function' ? gtAutoAfterEdit(coordPaintBatchEntries) : [];   // AREA TEST: modifiche automatiche
+            pushUndo({ entries: coordPaintBatchEntries.concat(auto) }); vibrate(); draftSaveSoon();
+        }
         coordPaintBatchEntries = []; coordPaintTouchedKeys = new Set();
         scheduleNavCounts();
     }
@@ -13344,8 +13353,11 @@
         const done = absApplyChecked([{ key, next, row, col }].concat(tail ? [tail] : []));
         if(!done) return;
         const entries = done.map(x => ({ key: x.key, prev: x.prev, next: x.next })), keys = entries.map(x => x.key);
-        pushUndo({ entries });
-        afterCoordChange(keys); closeShiftEditPopup();
+        afterCoordChange(keys);
+        // AREA TEST: modifiche automatiche (interruttore sulla ruota): sostituto e reperibilità, annullabili insieme
+        const auto = typeof gtAutoAfterEdit === 'function' ? gtAutoAfterEdit(entries) : [];
+        pushUndo({ entries: entries.concat(auto) });
+        closeShiftEditPopup();
         if(tail) ccToast(`Il permesso notte copre anche il giorno dopo: tolto ${SPECIAL_SUBCODES[tail.was] ? SPECIAL_SUBCODES[tail.was].toLowerCase() : 'l\u2019assenza'} che c\u2019era, così torna disponibile.`);
     }
     // Il permesso notte occupa anche il giorno dopo (fino alle 7:20) e la casella di quel giorno
