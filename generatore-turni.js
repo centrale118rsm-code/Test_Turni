@@ -692,7 +692,7 @@
     function loadOpts() {
         var o = null; try { o = JSON.parse(localStorage.getItem('gt_opts') || 'null'); } catch (e) {}
         GT.opts = mergeOpts(o || {});
-        if (!GT.opts.year) GT.opts.year = (typeof SHIFT_YEAR !== 'undefined' ? SHIFT_YEAR : new Date().getFullYear()) + 1;
+        if (!GT.opts.year) GT.opts.year = (typeof realActiveYear !== 'undefined' ? realActiveYear : typeof SHIFT_YEAR !== 'undefined' ? SHIFT_YEAR : new Date().getFullYear()) + 1;
     }
     function saveOpts() { try { localStorage.setItem('gt_opts', JSON.stringify(GT.opts)); } catch (e) {} }
     function planDoc(year) { return db.collection('test_generatore').doc(String(year)); }
@@ -744,12 +744,12 @@
         return { days: n, last: lastDay };
     }
 
-    async function gtGenerate(fromIso) {
+    async function gtGenerate(fromIso, silent) {
         if (GT.busy) return; GT.busy = true;
         try {
             await loadOpsCfg();
             var year = GT.opts.year, inp = appInput();
-            if (GT.plan && GT.plan.year === year && !fromIso) {
+            if (GT.plan && GT.plan.year === year && !fromIso && !silent) {
                 var ok = await ccConfirm('Rigenerare il ' + year + '?', 'Il piano generato e le modifiche fatte a mano nel piano vengono rifatti da capo. Restano i turni già compilati nel calendario e le assenze approvate dal portale.', 'Rigenera');
                 if (!ok) return;
             }
@@ -1192,6 +1192,22 @@
     }
     // Scrive solo le caselle del generatore: quelle cambiate a mano nel calendario dopo l'ultima
     // scrittura (e quelle che c'erano già) restano come sono.
+    // reperibilità rimaste senza turno (es. dopo aver cancellato o rigenerato): chi è reperibile quel giorno
+    // non ha una casella di lavoro → la reperibilità si toglie
+    var REST_V = { r: 1, R: 1, RIPOSO: 1 };
+    function repOrphans(y, cellsByMonth, saved, keep) {
+        var MN = Object.keys(MONTH_MAP), out = {};
+        Object.keys(saved || {}).forEach(function (d) {
+            if (d.slice(0, 4) !== String(y) || (keep && keep[d])) return;
+            var who = saved[d]; if (!who) return;
+            var mi = Number(d.slice(5, 7)) - 1, c = (cellsByMonth[mi] || {})[who + '__' + MN[mi] + '-' + Number(d.slice(8, 10))];
+            var v = c && (c.v || '').toString().split('/')[0].trim();
+            if (!c || !v || v === '-' || REST_V[v] || (c.subV && String(c.subV).trim())) out[d] = 1;
+        });
+        return out;
+    }
+    // "-" nell'Excel = giorno non ancora programmato: vale come casella vuota
+    function blankCell(c) { return !c || ((c.v || '').toString().trim() === '-' || !(c.v || '').toString().trim()) && !(c.subV || '').toString().trim(); }
     function sameCell(a, b) { return !!a && !!b && (a.v || '') === (b.v || '') && (a.subV || '') === (b.subV || ''); }
     async function writePlanToCalendar(p) {
         if (!p || typeof cfgRef !== 'function') return;
@@ -1203,21 +1219,23 @@
             var mi = Number(iso.slice(5, 7)) - 1, dn = Number(iso.slice(8, 10));
             ids.forEach(function (id) {
                 var c = p.cells[iso][id]; if (!c || c.off || (!c.v && !c.sub)) return;
+                if (!c.gen && !c.req && !c.manual && !c.cov) return;   // turni già compilati: sono già nel calendario, non sono del generatore
                 target[mi + '|' + id + '__' + MN[mi] + '-' + dn] = { v: c.sub ? (c.v || '') : c.v, subV: c.sub || '' };
             });
         });
         var docs = await Promise.all(MN.map(function (_, mi) { return cfgRef(monthDocName(y, mi)).get(); }));
-        var batch = db.batch(), writes = 0;
+        var batch = db.batch(), writes = 0, finalCells = [];
         docs.forEach(function (d, mi) {
             var cur = d.exists ? (d.data().cells || {}) : {}, out = {}, keys = {}, legacy = prev.legacy && d.exists && d.data().source === 'generatore';
+            var fin = finalCells[mi] = Object.assign({}, cur);
             Object.keys(target).forEach(function (k) { if (k.indexOf(mi + '|') === 0) keys[k.slice(k.indexOf('|') + 1)] = 1; });
             Object.keys(prev.cells).forEach(function (k) { if (k.indexOf(mi + '|') === 0) keys[k.slice(k.indexOf('|') + 1)] = 1; });
             Object.keys(keys).forEach(function (k) {
-                var t = target[mi + '|' + k], c = cur[k], pv = prev.cells[mi + '|' + k];
+                var t = target[mi + '|' + k], c = blankCell(cur[k]) ? null : cur[k], pv = prev.cells[mi + '|' + k];
                 var mine = !c || legacy || (pv ? sameCell(c, pv) : sameCell(c, t));
                 if (!mine) return;                                   // cambiata a mano: si lascia
-                if (t) { next.cells[mi + '|' + k] = t; if (!sameCell(c, t)) out[k] = t; }
-                else if (c) out[k] = del;
+                if (t) { next.cells[mi + '|' + k] = t; fin[k] = t; if (!sameCell(c, t)) out[k] = t; }
+                else if (c) { out[k] = del; delete fin[k]; }
             });
             if (Object.keys(out).length) { batch.set(cfgRef(monthDocName(y, mi)), { cells: out, updatedAt: now }, { merge: true }); writes++; }
         });
@@ -1230,6 +1248,7 @@
             if (c && (pv ? c !== pv : c !== t)) return;
             if (t) { next.rep[d] = t; if (c !== t) repOut[d] = t; } else if (c) repOut[d] = del;
         });
+        var orph = repOrphans(y, finalCells, saved, next.rep); Object.keys(orph).forEach(function (d) { if (!repOut[d]) repOut[d] = del; });
         if (Object.keys(repOut).length) { batch.set(repDocRef(), { turni: repOut, updatedAt: now }, { merge: true }); writes++; }
         var names = {}; p.ops.forEach(function (o) { if (o.name && o.name !== o.id) names[o.id] = o.name; });
         batch.set(cfgRef('anno_' + y), { year: y, baseNames: ids, contract: (operatorConfig && operatorConfig.contract) || {}, allow: {}, removed: {}, nameOverrides: Object.assign({}, typeof nameOverrides !== 'undefined' ? nameOverrides : {}, names), generated: true, model: (p.opts && p.opts.model) || '7h12', generatedAt: now });
@@ -1241,15 +1260,16 @@
     async function removePlanFromCalendar(p) {
         var y = p.year, prev = GT.written[y] || { cells: {}, rep: {} }, del = firebase.firestore.FieldValue.delete(), MN = Object.keys(MONTH_MAP);
         var docs = await Promise.all(MN.map(function (_, mi) { return cfgRef(monthDocName(y, mi)).get(); }));
-        var batch = db.batch();
+        var batch = db.batch(), left = [];
         docs.forEach(function (d, mi) {
-            if (!d.exists) return;
+            left[mi] = {}; if (!d.exists) return;
             var cur = d.data().cells || {}, out = {}, legacy = prev.legacy && d.data().source === 'generatore';
-            Object.keys(cur).forEach(function (k) { var pv = prev.cells[mi + '|' + k]; if (legacy || (pv && sameCell(cur[k], pv))) out[k] = del; });
+            Object.keys(cur).forEach(function (k) { var pv = prev.cells[mi + '|' + k]; if (legacy || (pv && sameCell(cur[k], pv))) out[k] = del; else left[mi][k] = cur[k]; });
             if (Object.keys(out).length) batch.set(cfgRef(monthDocName(y, mi)), { cells: out }, { merge: true });
         });
         var saved = (typeof repTurniSaved !== 'undefined' && repTurniSaved) || {}, rep = {};
         Object.keys(prev.rep).forEach(function (d) { if (saved[d] === prev.rep[d]) rep[d] = del; });
+        Object.keys(repOrphans(y, left, saved)).forEach(function (d) { rep[d] = del; });
         if (Object.keys(rep).length) batch.set(repDocRef(), { turni: rep }, { merge: true });
         batch.delete(cfgRef('anno_' + y));
         await batch.commit();
@@ -1281,8 +1301,19 @@
         gtSetWorkYear(year);
     };
     function gtScrollTo(iso) { try { var rr = repRowOfDate(iso); var td = rr && document.querySelector('td[data-row="' + rr + '"]'); if (td) td.scrollIntoView({ block: 'center' }); } catch (e) {} }
+    async function cleanOrphanReps(y) {
+        if (typeof dataSourceMode === 'undefined' || dataSourceMode !== 'firebase') return 0;
+        var MN = Object.keys(MONTH_MAP), docs = await Promise.all(MN.map(function (_, mi) { return cfgRef(monthDocName(y, mi)).get(); }));
+        var cells = docs.map(function (d) { return d.exists ? (d.data().cells || {}) : {}; });
+        var saved = (typeof repTurniSaved !== 'undefined' && repTurniSaved) || {}, o = repOrphans(y, cells, saved), del = firebase.firestore.FieldValue.delete(), upd = {};
+        Object.keys(o).forEach(function (d) { upd[d] = del; });
+        if (Object.keys(upd).length) await repDocRef().set({ turni: upd }, { merge: true });
+        return Object.keys(upd).length;
+    }
     async function afterBoot() {
+        quickBar();
         await loadCalYears();
+        try { await new Promise(function (r) { setTimeout(r, 1500); }); var nOrph = await cleanOrphanReps((typeof realActiveYear !== 'undefined' ? realActiveYear : SHIFT_YEAR) + 1); if (nOrph) console.log('Tolte ' + nOrph + ' reperibilità senza turno'); } catch (e) { console.error(e); }
         if (typeof updateYearUi === 'function') updateYearUi();
         var rw = null, sc = null; try { rw = sessionStorage.getItem('gt_rewrite'); sc = sessionStorage.getItem('gt_scroll'); sessionStorage.removeItem('gt_rewrite'); sessionStorage.removeItem('gt_scroll'); } catch (e) {}
         if (rw) { var p = await loadPlan(+rw); if (p) { try { await writePlanToCalendar(p); } catch (e) { console.error(e); } } if (typeof dataSourceMode !== 'undefined' && dataSourceMode === 'firebase' && activeYear !== +rw) { try { localStorage.setItem('gt_work_year', rw); } catch (e) {} location.reload(); return; } }
@@ -1301,6 +1332,33 @@
         } catch (e) {}
     }
     if (typeof renderTable === 'function') { var _rt = renderTable; renderTable = function () { decorateCov(); return _rt.apply(this, arguments); }; }
+    // ── pulsanti rapidi sotto "AREA TEST": rifanno tutto l'anno con un altro modello, per presentarlo ──
+    function quickBar() {
+        var el = document.getElementById('gt-quick');
+        if (!el) { el = document.createElement('div'); el.id = 'gt-quick'; document.body.appendChild(el); }
+        var o = GT.opts || {}, y = o.year;
+        el.innerHTML = '<span class="gt-q-l">' + (GT.quickBusy ? 'Genero il ' + y + '…' : 'Turni ' + y + ':') + '</span>' +
+            '<button class="' + (o.model === '6h' ? 'on' : '') + '" onclick="GT.quick(\'6h\')" title="Rigenera tutto il ' + y + ' col modello 6 h">6 h</button>' +
+            '<button class="' + (o.model === '7h12' ? 'on' : '') + '" onclick="GT.quick(\'7h12\')" title="Rigenera tutto il ' + y + ' col modello 7 h 12">7 h 12</button>' +
+            '<button class="' + (o.nights === 2 ? 'on' : '') + '" onclick="GT.quick(\'n2\')" title="Secondo autista di notte sì/no">2ª notte</button>';
+        el.classList.toggle('busy', !!GT.quickBusy);
+    }
+    GT.quick = async function (k) {
+        if (GT.quickBusy || GT.busy) return;
+        if (!GT.opts) loadOpts();
+        if (k === 'n2') GT.opts.nights = GT.opts.nights === 2 ? 1 : 2; else GT.opts.model = k;
+        saveOpts(); GT.quickBusy = true; quickBar();
+        try {
+            if (typeof isViewingArchive === 'function' && isViewingArchive()) returnToActiveYear();
+            var y = GT.opts.year; await loadPlan(y);
+            await gtGenerate(null, true);
+            var A = GT.plan ? analyze(GT.plan) : null, holes = A ? A.holes.filter(function (x) { return !x.pre; }).length : 0;
+            var what = (GT.opts.model === '6h' ? 'modello 6 h' : 'modello 7 h 12') + (GT.opts.nights === 2 ? ', 2 autisti di notte' : '');
+            if (typeof activeYear !== 'undefined' && activeYear !== y) { try { sessionStorage.setItem('gt_scroll', GT.plan.firstGenerated); } catch (e) {} gtSetWorkYear(y); }
+            else { if (typeof renderTable === 'function') setTimeout(renderTable, 600); toast('Il ' + y + ' è rifatto: ' + what + (holes ? ' · ' + holes + ' turni scoperti' : '')); }
+        } catch (e) { console.error(e); toast('Non riuscito: ' + e.message, true); }
+        finally { GT.quickBusy = false; quickBar(); }
+    };
     function leaveGenView() { if (typeof isViewingArchive === 'function' && isViewingArchive() && typeof returnToActiveYear === 'function') returnToActiveYear(); }
 
     // ── aggancio alla console ──
@@ -1331,6 +1389,10 @@
         '.gt-pre .msym{color:var(--cc-accent)}',
         '.gt-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}',
         '.gt-rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px;padding:14px}',
+        '#gt-quick{position:fixed;top:calc(env(safe-area-inset-top,0px) + 22px);left:50%;transform:translateX(-50%);z-index:2147483645;display:flex;gap:4px;align-items:center;padding:3px 4px 3px 9px;background:#fff;border:2px solid #e10600;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.25);font:600 11.5px/1 Inter,system-ui,sans-serif;color:#7a0000}',
+        '#gt-quick button{border:1px solid #e5b4b2;background:#fff;color:#7a0000;border-radius:999px;padding:4px 9px;font:700 11.5px/1 Inter,system-ui,sans-serif;cursor:pointer}',
+        '#gt-quick button.on{background:#e10600;border-color:#e10600;color:#fff}',
+        '#gt-quick.busy button{opacity:.45;pointer-events:none}',
         '.gt-nav{position:sticky;top:0;z-index:5;display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 10px;background:var(--cc-bg,var(--cc-surface-2))}',
         '.gt-nav button{border:1px solid var(--cc-line);background:var(--cc-surface);border-radius:999px;padding:6px 14px;font:600 13px var(--cc-font);color:var(--cc-text);cursor:pointer}',
         '.gt-nav button:hover{border-color:var(--cc-accent);color:var(--cc-accent)}',
