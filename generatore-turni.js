@@ -779,41 +779,52 @@
     }
 
     // ── sezione Generazione turni ──
-    var RULES = [
-        { k: 'eqOp', n: 1, icon: 'balance', t: 'Equità fra tutti gli operatori', d: 'Stesse ore, notti, weekend liberi, festivi e turni di mattina e pomeriggio: chi ne ha avuti di meno passa avanti.' },
-        { k: 'eqRep', n: 2, icon: 'phone_in_talk', t: 'Equità nelle reperibilità', d: 'La reperibilità va a chi ne ha fatte meno (i festivi si contano a parte), tra chi è di mattina quel giorno.' },
-        { k: 'model', n: 3, icon: 'schedule', t: 'Modello orario dei diurnisti', d: '', model: true },
-        { k: 'weekendRest', n: 4, icon: 'beach_access', t: 'Riposi dei diurnisti nel fine settimana', d: 'Quando la copertura lo permette i riposi cadono di sabato e domenica, a turno fra tutti.' },
-        { k: 'mBeforeRest', n: 5, icon: 'wb_twilight', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Per i diurnisti: il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
-        { k: 'blocks', n: 6, icon: 'repeat', t: 'Turno e diurno a rotazione: 5 settimane', d: 'Le posizioni da turnista sono sempre 5. Dopo 5 settimane il turnista lascia il posto al diurnista fuori turno da più tempo (il lunedì del pomeriggio).' },
-        { k: 'repGap', n: 7, icon: 'event_busy', t: 'Reperibilità non ravvicinate', d: '', gap: true },
-        { k: 'eqFest', n: 8, icon: 'calendar_month', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
-        { k: 'maxFerie', n: 9, icon: 'beach_access', t: 'Ferie: quanti alla volta', d: '', ferie: true },
-        { k: 'altMP', n: 10, icon: 'swap_vert', t: 'Alternanza mattina e pomeriggio', d: 'Per i diurnisti, quando la copertura lo permette: dopo un pomeriggio si fa una mattina e dopo una mattina un pomeriggio, invece di tanti giorni uguali di fila. La regola 5 (mattina prima del riposo, pomeriggio dopo) ha la precedenza.' }
+    // Regole divise per categoria. Numerate in ordine di lettura; "fixed" = sempre attive.
+    var RULE_CATS = [
+        { k: 'servizio', icon: 'schedule', t: 'Servizio e ore', d: 'Sempre attive' },
+        { k: 'turnisti', icon: 'repeat', t: 'Turnisti', d: 'Chi fa P › M › N › S › R' },
+        { k: 'diurnisti', icon: 'wb_twilight', t: 'Diurnisti', d: 'Chi fa mattine e pomeriggi' },
+        { k: 'rep', icon: 'phone_in_talk', t: 'Reperibilità', d: '24 h dalle 13:00' },
+        { k: 'equita', icon: 'balance', t: 'Equità e assenze', d: 'Fra tutti gli operatori' }
     ];
-    function ruleCard(r) {
-        var o = GT.opts, on = !!o.rules[r.k], body = r.d;
-        if (r.model) {
-            body = '<div class="gt-seg">' + Object.keys(MODELS).map(function (k) {
-                var m = MODELS[k];
-                return '<button class="' + (o.model === k ? 'on' : '') + '" onclick="GT.setOpt(\'model\',\'' + k + '\')"><b>' + m.label + '</b><small>' + m.workDays + ' giorni · ' + m.rests + (m.rests > 1 ? ' riposi' : ' riposo') + ' a settimana</small><small>m ' + m.m + ' · p ' + m.p + '</small></button>';
-            }).join('') + '</div>';
-        }
-        if (r.ferie) body = 'Al massimo <input type="number" min="1" max="5" value="' + o.maxFerie + '" class="gt-num" onchange="GT.setOpt(\'maxFerie\',Math.max(1,Math.min(5,+this.value||2)))"> persone in ferie nello stesso giorno. Se una richiesta supera il limite te lo chiedo prima di inserirla.';
+    var RULES = [
+        { cat: 'servizio', fixed: 'nights', t: 'Autisti in servizio' },
+        { cat: 'servizio', fixed: 'hours', t: '36 ore a settimana per tutti' },
+        { cat: 'servizio', fixed: 'keep', t: 'Turni già compilati e assenze restano come sono', d: 'Il generatore riempie solo le caselle vuote. Dopo una notte c’è sempre lo smonto, mai 7 giorni di lavoro di fila.' },
+        { cat: 'turnisti', k: 'blocks', t: 'Turno e diurno a rotazione ogni 5 settimane', d: 'Le posizioni da turnista sono sempre 5. Dopo 5 settimane il turnista lascia il posto al diurnista fuori turno da più tempo (il lunedì, col pomeriggio).' },
+        { cat: 'diurnisti', fixed: 'model', t: 'Modello orario' },
+        { cat: 'diurnisti', k: 'weekendRest', t: 'Riposi nel fine settimana', d: 'Quando la copertura lo permette i riposi cadono di sabato e domenica, a turno fra tutti.' },
+        { cat: 'diurnisti', k: 'mBeforeRest', t: 'Mattina prima del riposo, pomeriggio dopo', d: 'Il giorno prima del riposo si lavora di mattina, il giorno dopo di pomeriggio.' },
+        { cat: 'diurnisti', k: 'altMP', t: 'Alternanza mattina e pomeriggio', d: 'Dopo un pomeriggio una mattina e viceversa, invece di tanti giorni uguali di fila. La regola precedente ha la precedenza.' },
+        { cat: 'rep', k: 'eqRep', t: 'Reperibilità divise in modo equo', d: 'Va a chi ne ha fatte meno (i festivi si contano a parte), fra chi è di mattina quel giorno.' },
+        { cat: 'rep', k: 'repGap', t: 'Reperibilità non ravvicinate', gap: true },
+        { cat: 'equita', k: 'eqOp', t: 'Equità fra tutti gli operatori', d: 'Stesse ore, notti, weekend liberi e turni di mattina e pomeriggio: chi ne ha avuti meno passa avanti.' },
+        { cat: 'equita', k: 'eqFest', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
+        { cat: 'equita', k: 'maxFerie', t: 'Ferie: quanti alla volta', ferie: true }
+    ];
+    RULES.forEach(function (r, i) { r.n = i + 1; });
+    function seg(opt, items) {
+        var o = GT.opts;
+        return '<div class="gt-seg">' + items.map(function (x) { return '<button class="' + (o[opt] === x[0] ? 'on' : '') + '" onclick="GT.setOpt(\'' + opt + '\',' + JSON.stringify(x[0]).replace(/"/g, '\'') + ')">' + x[1] + '</button>'; }).join('') + '</div>';
+    }
+    function ruleRow(r) {
+        var o = GT.opts, on = r.fixed ? true : !!o.rules[r.k], body = r.d || '';
+        if (r.fixed === 'nights') body = 'Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte:' + seg('nights', [[1, '1 autista'], [2, '2 autisti']]);
+        if (r.fixed === 'hours') body = 'Turnisti: pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + '. Le assenze contano come giornata di contratto.';
+        if (r.fixed === 'model') body = seg('model', Object.keys(MODELS).map(function (k) { var m = MODELS[k]; return [k, '<b>' + m.label + '</b><small>' + m.workDays + ' giorni · ' + m.rests + (m.rests > 1 ? ' riposi' : ' riposo') + ' a settimana</small><small>' + m.m + ' · ' + m.p + '</small>']; }));
+        if (r.ferie) body = 'Al massimo <input type="number" min="1" max="5" value="' + o.maxFerie + '" class="gt-num" onchange="GT.setOpt(\'maxFerie\',Math.max(1,Math.min(5,+this.value||2)))"> persone in ferie nello stesso giorno. Se una richiesta supera il limite te lo chiedo prima.';
         if (r.gap) body = 'Fra una reperibilità e la successiva della stessa persona almeno <input type="number" min="2" max="10" value="' + o.repGapDays + '" class="gt-num" onchange="GT.setOpt(\'repGapDays\',Math.max(2,Math.min(10,+this.value||4)))"> giorni.';
-        return '<div class="gt-rule ' + (on || r.model ? 'on' : 'off') + (r.model ? ' wide' : '') + '">' +
-            '<span class="gt-rule-n">' + r.n + '</span>' +
-            '<span class="msym gt-rule-i">' + r.icon + '</span>' +
-            '<div class="gt-rule-b"><b>' + r.t + '</b><div class="gt-rule-d">' + body + '</div></div>' +
-            (r.model ? '<span class="gt-fixed">sempre</span>' : '<label class="cc-switch" title="Attiva o disattiva"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="GT.setRule(\'' + r.k + '\',this.checked)"><span></span></label>') +
+        return '<div class="gt-row ' + (on ? 'on' : 'off') + '"><span class="gt-rule-n">' + r.n + '</span>' +
+            '<div class="gt-row-b"><b>' + r.t + '</b><div class="gt-rule-d">' + body + '</div></div>' +
+            (r.fixed ? '<span class="gt-fixed">sempre</span>' : '<label class="cc-switch" title="Attiva o disattiva"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="GT.setRule(\'' + r.k + '\',this.checked)"><span></span></label>') +
             '</div>';
     }
-    function fixedRules() {
-        var o = GT.opts;
-        return '<div class="gt-rule on"><span class="gt-rule-n">11</span><span class="msym gt-rule-i">nights_stay</span><div class="gt-rule-b"><b>Autisti in servizio</b><div class="gt-rule-d">Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte: ' +
-            '<span class="gt-seg gt-seg-sm"><button class="' + (o.nights === 1 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',1)">1 autista</button><button class="' + (o.nights === 2 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',2)">2 autisti</button></span></div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">12</span><span class="msym gt-rule-i">schedule</span><div class="gt-rule-b"><b>36 ore a settimana per tutti</b><div class="gt-rule-d">Turnisti: ciclo pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni = 36 h). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + ' = 36 h. Le assenze contano come giornata di contratto.</div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">13</span><span class="msym gt-rule-i">fact_check</span><div class="gt-rule-b"><b>Turni già compilati e assenze restano come sono</b><div class="gt-rule-d">Il generatore parte da quello che c\u2019è già nel calendario (turni, ferie, reperibilità) e riempie solo le caselle vuote. Dopo una notte c\u2019è sempre lo smonto, mai 7 giorni di lavoro di fila.</div></div><span class="gt-fixed">sempre</span></div>';
+    function rulesHtml() {
+        return '<div class="gt-cats">' + RULE_CATS.map(function (c) {
+            var rs = RULES.filter(function (r) { return r.cat === c.k; });
+            var on = rs.filter(function (r) { return r.fixed || GT.opts.rules[r.k]; }).length;
+            return '<div class="gt-cat"><div class="gt-cat-h"><span class="msym">' + c.icon + '</span><b>' + c.t + '</b><small>' + c.d + '</small><span class="gt-cat-n">' + on + '/' + rs.length + ' attive</span></div>' + rs.map(ruleRow).join('') + '</div>';
+        }).join('') + '</div>';
     }
     function needHtml() {
         var o = GT.opts, n = needPerWeek(o), y0 = o.year + '-01-01', y1 = o.year + '-12-31';
@@ -1014,19 +1025,22 @@
         if (years.indexOf(o.year) < 0) o.year = SHIFT_YEAR + 1;
         await loadPlan(o.year);
         var pre = prefilledInfo(o.year, inp);
+        var step = function (n, id, title, hint, body) { return '<div class="gt-step" id="' + id + '"><div class="gt-step-h"><span class="gt-step-n">' + n + '</span><h3>' + title + '</h3>' + (hint ? '<span class="cc-hint">' + hint + '</span>' : '') + '</div>' + body + '</div>'; };
+        var nav = [['gt-s-anno', 'Anno'], ['gt-s-regole', 'Regole'], ['gt-s-ops', 'Operatori']].concat(GT.plan ? [['gt-s-ris', 'Risultato'], ['gt-cal-anchor', 'Anteprima']] : []);
         main.innerHTML = '<div class="gt">' +
-            '<div class="cc-panel gt-hero"><div class="cc-panel-body">' +
-            '<div class="gt-hero-row"><div><div class="gt-eyebrow">Area test · scollegata da Firebase</div><h3 class="gt-h">Genera i turni di un anno intero</h3>' +
-            '<p class="cc-note">Scegli l\u2019anno, controlla le regole qui sotto e premi Genera. Il risultato resta nell\u2019area test: il calendario dell\u2019app non viene toccato.</p></div>' +
-            '<div class="gt-year">' + years.map(function (y) { return '<button class="' + (o.year === y ? 'on' : '') + '" onclick="GT.setYear(' + y + ')">' + y + '</button>'; }).join('') + '</div></div>' +
-            '<div class="gt-pre"><span class="msym">' + (pre.days ? 'event_upcoming' : 'info') + '</span><span>' + (pre.days ? 'Nel calendario il ' + o.year + ' ha già <b>' + pre.days + ' giorni compilati</b> (fino al ' + fmtDay(pre.last) + '): il generatore parte da lì e li lascia com\u2019erano.' : 'Nel calendario il ' + o.year + ' è vuoto: il generatore parte dagli ultimi turni dell\u2019anno prima, se ci sono.') + '</span></div>' +
-            '<div class="gt-actions"><button class="cc-btn primary" onclick="GT.generate()" ' + (GT.busy ? 'disabled' : '') + '><span class="msym">edit_calendar</span>' + (GT.plan ? 'Rigenera il ' : 'Genera il ') + o.year + '</button>' +
-            (GT.plan ? '<button class="cc-btn primary" onclick="GT.showInCalendar(' + o.year + ')"><span class="msym">calendar_month</span>Vedi il ' + o.year + ' nel calendario</button><button class="cc-btn" onclick="GT.goCalendar()"><span class="msym">table_view</span>Anteprima qui sotto</button><button class="cc-btn danger" onclick="GT.clear()"><span class="msym">delete</span>Cancella piano</button>' : '') +
-            '<button class="cc-btn ghost" onclick="ccGo(\'richiestetest\')"><span class="msym">inventory_2</span>Richieste dal portale</button></div>' +
-            '</div></div>' +
-            '<div class="cc-panel"><div class="cc-panel-head"><h3>Regole del generatore</h3><span class="cc-hint">valgono per ogni generazione · si attivano e disattivano qui</span></div><div class="gt-rules">' +
-            RULES.map(ruleCard).join('') + fixedRules() + '</div>' + needHtml() + '</div>' +
-            resultHtml() + '<div id="gt-cal-anchor"></div>' + calendarHtml() + opsHtml() + '</div>';
+            '<div class="gt-nav">' + nav.map(function (x) { return '<button onclick="document.getElementById(\'' + x[0] + '\').scrollIntoView({behavior:\'smooth\',block:\'start\'})">' + x[1] + '</button>'; }).join('') + '</div>' +
+            step(1, 'gt-s-anno', 'Anno da generare', 'area test · dati finti',
+                '<div class="cc-panel gt-hero"><div class="cc-panel-body">' +
+                '<div class="gt-hero-row"><div class="gt-year">' + years.map(function (y) { return '<button class="' + (o.year === y ? 'on' : '') + '" onclick="GT.setYear(' + y + ')">' + y + '</button>'; }).join('') + '</div>' +
+                '<div class="gt-actions"><button class="cc-btn primary" onclick="GT.generate()" ' + (GT.busy ? 'disabled' : '') + '><span class="msym">edit_calendar</span>' + (GT.plan ? 'Rigenera il ' : 'Genera il ') + o.year + '</button>' +
+                (GT.plan ? '<button class="cc-btn" onclick="GT.showInCalendar(' + o.year + ')"><span class="msym">calendar_month</span>Vedi nel calendario</button>' : '') + '</div></div>' +
+                '<div class="gt-pre"><span class="msym">' + (pre.days ? 'event_upcoming' : 'info') + '</span><span>' + (pre.days ? 'Il ' + o.year + ' ha già <b>' + pre.days + ' giorni compilati</b> (fino al ' + fmtDay(pre.last) + '): restano com’erano, il generatore continua da lì.' : 'Il ' + o.year + ' è vuoto: il generatore parte dagli ultimi turni dell’anno prima.') + '</span></div>' +
+                (GT.plan ? '<div class="gt-pre"><span class="msym">check_circle</span><span>Il ' + o.year + ' generato è nel calendario: menu › <b>Anno</b> › ' + o.year + '. <button class="gt-link danger" onclick="GT.clear()">Cancella il piano</button></span></div>' : '') +
+                '</div></div>') +
+            step(2, 'gt-s-regole', 'Regole', 'valgono per ogni generazione', needHtml() + rulesHtml()) +
+            step(3, 'gt-s-ops', 'Operatori', 'aggiungi o togli, poi i turni si rigenerano da quel giorno', opsHtml()) +
+            (GT.plan ? step(4, 'gt-s-ris', 'Risultato', '', resultHtml() + '<div id="gt-cal-anchor"></div>' + calendarHtml()) : '') +
+            '</div>';
     }
 
     // ── sezione Richieste dal portale ──
@@ -1255,6 +1269,27 @@
         '.gt-pre .msym{color:var(--cc-accent)}',
         '.gt-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}',
         '.gt-rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px;padding:14px}',
+        '.gt-nav{position:sticky;top:0;z-index:5;display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 10px;background:var(--cc-bg,var(--cc-surface-2))}',
+        '.gt-nav button{border:1px solid var(--cc-line);background:var(--cc-surface);border-radius:999px;padding:6px 14px;font:600 13px var(--cc-font);color:var(--cc-text);cursor:pointer}',
+        '.gt-nav button:hover{border-color:var(--cc-accent);color:var(--cc-accent)}',
+        '.gt-step{margin-bottom:22px;scroll-margin-top:56px}',
+        '.gt-step-h{display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-wrap:wrap}',
+        '.gt-step-h h3{margin:0;font:700 17px var(--cc-font);color:var(--cc-text)}',
+        '.gt-step-n{width:26px;height:26px;border-radius:50%;background:var(--cc-ink);color:#fff;font:700 13px/26px var(--cc-font);text-align:center}',
+        '.gt-step .cc-panel{margin-bottom:10px}',
+        '.gt-cats{columns:2 420px;column-gap:12px}.gt-cat{break-inside:avoid;margin-bottom:12px}',
+        '.gt-cat{border:1px solid var(--cc-line);border-radius:8px;background:var(--cc-surface);overflow:hidden}',
+        '.gt-cat-h{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--cc-surface-2);border-bottom:1px solid var(--cc-line)}',
+        '.gt-cat-h .msym{color:var(--cc-accent)}.gt-cat-h b{font-size:14px}.gt-cat-h small{color:var(--cc-muted);font-size:12px}',
+        '.gt-cat-n{margin-left:auto;font:600 11px var(--cc-font);color:var(--cc-muted);white-space:nowrap}',
+        '.gt-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:start;padding:11px 14px;border-top:1px solid var(--cc-line-2,var(--cc-line))}',
+        '.gt-cat-h+.gt-row{border-top:0}',
+        '.gt-row.off .gt-row-b{opacity:.5}.gt-row.on .gt-rule-n{background:var(--cc-accent)}',
+        '.gt-row-b>b{display:block;font-size:13.5px;font-weight:600;margin-bottom:2px}',
+        '.gt-row .gt-seg{display:flex;flex-wrap:wrap;margin-top:6px}.gt-row .gt-seg button{flex:1;min-width:110px}',
+        '.gt-link{border:0;background:none;padding:0;margin-left:6px;font:600 13px var(--cc-font);color:var(--cc-accent);cursor:pointer;text-decoration:underline}.gt-link.danger{color:var(--cc-neg,#b42318)}',
+        '.gt-need{margin:0 0 12px}','#gt-ops .cc-panel-head h3{display:none}',
+        '@media (max-width:640px){.gt-cats{columns:1}.gt-row{padding:10px 12px}}',
         '.gt-rule{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--cc-line);border-radius:8px;background:var(--cc-surface);position:relative}',
         '.gt-rule.off{opacity:.55;background:var(--cc-surface-2)}',
         '.gt-rule-n{flex:0 0 24px;height:24px;border-radius:50%;background:var(--cc-ink);color:#fff;font:700 12px/24px var(--cc-font);text-align:center}',
