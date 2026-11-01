@@ -26,7 +26,7 @@
     var CSS = [
         '#area-test-frame{position:fixed;inset:0;pointer-events:none;z-index:2147483646;}',
         '#area-test-frame .at-tape{position:absolute;background:repeating-linear-gradient(-45deg,#e10600 0 14px,#ffffff 14px 28px);box-shadow:0 0 0 1px rgba(0,0,0,.25),0 1px 4px rgba(0,0,0,.35);}',
-        '#area-test-frame .at-top{top:0;left:0;right:0;height:calc(env(safe-area-inset-top,0px) + 20px);}',
+        '#area-test-frame .at-top{top:0;left:0;right:0;height:calc(env(safe-area-inset-top,0px) + 10px);}',
         '#area-test-frame .at-bottom{bottom:0;left:0;right:0;height:calc(env(safe-area-inset-bottom,0px) + 8px);}',
         '#area-test-frame .at-left{top:0;bottom:0;left:0;width:8px;}',
         '#area-test-frame .at-right{top:0;bottom:0;right:0;width:8px;}',

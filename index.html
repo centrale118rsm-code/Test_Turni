@@ -11,27 +11,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0b2257" id="theme-color-meta">
-    <meta name="apple-mobile-web-app-title" content="Autisti 26">
-    <script>
-    // Le app dei turni (autisti in uso, autisti prova, infermieri) stanno sullo stesso indirizzo
-    // e condividerebbero la memoria del dispositivo: qui ogni chiave prende il prefisso "as26p_".
-    (function() {
-        const P = 'as26p_', ls = window.localStorage, ss = window.sessionStorage, S = Storage.prototype;
-        const g = S.getItem, s = S.setItem, r = S.removeItem;
-        const k = (st, key) => (st === ls || st === ss) ? P + key : key;
-        S.getItem = function(key) { return g.call(this, k(this, key)); };
-        S.setItem = function(key, v) { return s.call(this, k(this, key), v); };
-        S.removeItem = function(key) { return r.call(this, k(this, key)); };
-    })();
-    </script>
+    <meta name="apple-mobile-web-app-title" content="TEST Autisti">
+    <!-- AREA TEST: memoria separata dalle app vere + bandella (vedi area-test.js) -->
+    <script src="area-test.js"></script>
     <meta name="description" content="Gestione Turni Autisti Soccorritori 2026 (prova)">
     <link rel="manifest" href="manifest.json?v=8">
     <link rel="apple-touch-icon" href="apple-touch-icon-autisti3.png">
     <link rel="icon" type="image/png" href="icon-autisti3-192.png">
     <title>AUTISTI 2026</title>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+    <!-- AREA TEST: Firebase FINTO, nessun collegamento al database vero (vedi firebase-mock.js) -->
+    <script src="firebase-mock.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet">
@@ -4047,14 +4036,14 @@
     // ═══════════════════════════════════════════════════════════════════════
     // FIREBASE — inizializzazione, tracciamento accessi, sincronizzazione config
     // ═══════════════════════════════════════════════════════════════════════
-    const firebaseConfig = {
-        apiKey: "AIzaSyAMX2ycf_6P3AcBvarVX4XNKbdposkuqgE",
-        authDomain: "area-personale-autsocc-118-rsm.firebaseapp.com",
-        projectId: "area-personale-autsocc-118-rsm",
-        storageBucket: "area-personale-autsocc-118-rsm.firebasestorage.app",
-        messagingSenderId: "910283994567",
-        appId: "1:910283994567:web:d9c45b5f4b5a83b92595e2",
-        measurementId: "G-9P8X82Y4H5"
+    const firebaseConfig = {   // AREA TEST: progetto finto, firebase-mock.js non si collega a nulla
+        apiKey: "area-test-finto",
+        authDomain: "area-test.invalid",
+        projectId: "area-test-finto",
+        storageBucket: "area-test.invalid",
+        messagingSenderId: "0",
+        appId: "area-test",
+        measurementId: ""
     };
     let fbApp, db, fbAuth, fbReady = false, fbPersistence = false;
     // PROVA usa documenti propri dentro admin_config ("prova_settings", "prova_turni_…"),
@@ -4812,7 +4801,7 @@
     // sessione, campo "errors"), accessi, nomi occupati in "Chi sei?" (con la possibilità di
     // liberarli), statistiche della ruota (campo "wheelLog" della sessione), registro delle
     // modifiche, motore delle notifiche su GitHub, richieste del portale e copie di sicurezza.
-    const ADM_MOTORE_REPO = 'centrale118rsm-code/PROVA-MODIFICHE-TURNI';   // dove gira il motore delle notifiche
+    const ADM_MOTORE_REPO = 'centrale118rsm-code/Test_Turni';   // AREA TEST: qui il motore non c'è (niente notifiche vere)   // dove gira il motore delle notifiche
     const ADM_DAYS = 14;
     const ADM_TABS = {
         panoramica: ['Panoramica', 'Stato dell’app e cose da guardare'],
@@ -5793,7 +5782,7 @@
         // se l'ultima volta i turni erano già su Firebase, l'Excel (300 KB) non si scarica nemmeno
         let lastDs = null; try { lastDs = localStorage.getItem('data_source_' + DATA_NS); } catch(e) {}
         const fetchExcel = async () => {
-            try { const response = await fetch(/PROVA/i.test(location.pathname) ? IMPORT_OFFICIAL.url + '?v=' + Date.now() : FILE_NAME); if(!response.ok) throw new Error("File mancante"); return await response.arrayBuffer(); }
+            try { const response = await fetch(/PROVA|TEST_TURNI/i.test(location.pathname) ? IMPORT_OFFICIAL.url + '?v=' + Date.now() : FILE_NAME); if(!response.ok) throw new Error("File mancante"); return await response.arrayBuffer(); }
             catch(e) { console.error(e); return null; }
         };
         const excelAttempt = lastDs === 'firebase' ? null : fetchExcel();

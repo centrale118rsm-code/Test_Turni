@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<!-- AREA TEST: memoria separata dalle app vere + bandella -->
+<script src="area-test.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -9,9 +11,8 @@
 <title>Notifiche — A.S. 26</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-
+<!-- AREA TEST: Firebase FINTO, nessun collegamento al database vero -->
+<script src="firebase-mock.js"></script>
 <style>
 :root {
   --primary: #2563eb;
@@ -1256,12 +1257,12 @@ function hideToast() {
 // FIREBASE real-time (legge notifiche nuove dalle richieste)
 // ══════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey: "AIzaSyAMX2ycf_6P3AcBvarVX4XNKbdposkuqgE",
-  authDomain: "area-personale-autsocc-118-rsm.firebaseapp.com",
-  projectId: "area-personale-autsocc-118-rsm",
-  storageBucket: "area-personale-autsocc-118-rsm.firebasestorage.app",
-  messagingSenderId: "910283994567",
-  appId: "1:910283994567:web:d9c45b5f4b5a83b92595e2",
+  apiKey:"area-test-finto",
+  authDomain: "area-test.invalid",
+  projectId:"area-test-finto",
+  storageBucket: "area-test.invalid",
+  messagingSenderId:"0",
+  appId:"area-test",
 };
 
 const TIPO_LABELS = {

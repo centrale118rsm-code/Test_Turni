@@ -1,6 +1,6 @@
 {
-  "name": "Turni Autisti 2026",
-  "short_name": "Autisti 26",
+  "name": "TEST Turni Autisti 2026",
+  "short_name": "TEST Autisti",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

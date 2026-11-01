@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<!-- AREA TEST: memoria separata dalle app vere + bandella -->
+<script src="area-test.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>A.S. 26 — Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<!-- AREA TEST: Firebase FINTO, nessun collegamento al database vero -->
+<script src="firebase-mock.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;outline:none;}
 :root{
@@ -692,7 +693,7 @@ service cloud.firestore {
         </div>
       </div>
       <div style="padding:14px 18px;display:flex;gap:8px">
-        <button class="btn-add" style="flex:1" onclick="window.open('https://console.firebase.google.com/project/area-personale-autsocc-118-rsm/firestore','_blank')">
+        <button class="btn-add" style="flex:1" onclick="alert('AREA TEST: niente console Firebase, i dati sono finti e restano in questo browser.')">
           <span class="material-icons-round" style="font-size:15px">storage</span> Apri Firestore
         </button>
         <button class="btn-add" style="flex:1" onclick="loadFromFirebase()">
@@ -791,7 +792,7 @@ service cloud.firestore {
 
 <script>
 // ── FIREBASE ──
-const firebaseConfig={apiKey:"AIzaSyAMX2ycf_6P3AcBvarVX4XNKbdposkuqgE",authDomain:"area-personale-autsocc-118-rsm.firebaseapp.com",projectId:"area-personale-autsocc-118-rsm",storageBucket:"area-personale-autsocc-118-rsm.firebasestorage.app",messagingSenderId:"910283994567",appId:"1:910283994567:web:d9c45b5f4b5a83b92595e2"};
+const firebaseConfig={apiKey:"area-test-finto",authDomain:"area-test.invalid",projectId:"area-test-finto",storageBucket:"area-test.invalid",messagingSenderId:"0",appId:"area-test"};
 if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
 const db=firebase.firestore();
 const auth=firebase.auth();
@@ -822,6 +823,7 @@ function ensureAdminAuth(){
 // NOTA: per sicurezza mantieni le regole con read: if request.auth != null
 //       e abilita il provider Anonimo su Firebase Authentication
 function fetchSessionsViaRest(hoursFilter, userFilter){
+    return Promise.resolve([]);   // AREA TEST: niente chiamate REST al Firestore vero
     const PROJECT = firebaseConfig.projectId;
     const API_KEY = firebaseConfig.apiKey;
     const BASE = 'https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents';

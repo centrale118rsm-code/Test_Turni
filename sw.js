@@ -4,9 +4,9 @@
 // Con la rete si scarica sempre la versione nuova (pagina ed Excel: prima Internet, poi la copia).
 // v7: modalità offline. Il nome della cache è solo di questa app: le app dello stesso sito
 // (ufficiale autisti, infermieri) hanno le loro cache e non si toccano.
-const CACHE_PREFIX = 'prova-autisti-';
+const CACHE_PREFIX = 'test-autisti-';   // AREA TEST: cache propria, non tocca quelle delle app vere
 const CACHE_NAME = CACHE_PREFIX + 'v9';
-const OLD_CACHES = ['turni-autisti-cache-v3', 'turni-autisti-cache-v4', 'turni-autisti-cache-v5', 'turni-autisti-cache-v6'];   // vecchie cache di questa app (la v2 è dell'app ufficiale)
+const OLD_CACHES = [];   // AREA TEST: non cancella le cache delle altre app sullo stesso sito
 
 const urlsToCache = [
   './',
@@ -14,7 +14,9 @@ const urlsToCache = [
   './manifest.json?v=8',
   './logo.png',
   './icon-autisti3-512.png',
-  './icon-autisti3-192.png'
+  './icon-autisti3-192.png',
+  './area-test.js',
+  './firebase-mock.js'
 ];
 // librerie e caratteri presi da Internet che servono anche senza rete
 const CDN_HOSTS = ['www.gstatic.com', 'cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
