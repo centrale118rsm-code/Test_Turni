@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>A.S. 26 — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;outline:none;}
+:root{
+  --red:#dc2626;--bg:#f1f5f9;--card:#fff;--text:#0f172a;
+  --text-sec:#64748b;--border:#e2e8f0;--header-h:64px;--accent:#2563eb;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);padding-top:var(--header-h);padding-bottom:60px;min-height:100vh;}
+
+header{position:fixed;top:0;left:0;right:0;height:var(--header-h);z-index:200;
+  background:linear-gradient(135deg,#7f1d1d 0%,#dc2626 100%);
+  display:flex;align-items:center;justify-content:space-between;padding:0 16px;
+  box-shadow:0 2px 20px rgba(0,0,0,0.3);}
+.hdr-left{display:flex;align-items:center;gap:10px;}
+.hdr-icon{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;}
+.hdr-title{font-size:1.1rem;font-weight:900;color:#fff;letter-spacing:-0.5px;}
+.hdr-sub{font-size:0.58rem;color:rgba(255,255,255,0.6);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
+.hdr-right{display:flex;align-items:center;gap:6px;}
+.btn-hdr{background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:10px;
+  height:36px;padding:0 12px;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.72rem;font-weight:700;font-family:'Inter',sans-serif;}
+.btn-hdr .material-icons-round{font-size:16px;}
+.btn-hdr:active{background:rgba(255,255,255,0.25);}
+
+#save-status{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.12);
+  border-radius:8px;padding:4px 10px;font-size:0.65rem;font-weight:700;color:rgba(255,255,255,0.8);}
+#save-dot{width:7px;height:7px;border-radius:50%;background:#94a3b8;transition:background 0.3s;flex-shrink:0;}
+#save-dot.saving{background:#fbbf24;animation:pulse-save 0.6s ease infinite alternate;}
+#save-dot.saved{background:#22c55e;}
+#save-dot.error{background:#ef4444;}
+@keyframes pulse-save{from{opacity:0.5}to{opacity:1}}
+
+#lock-screen{position:fixed;inset:0;background:linear-gradient(135deg,#7f1d1d,#dc2626);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;}
+.lock-icon{width:80px;height:80px;background:rgba(255,255,255,0.15);border-radius:24px;
+  display:flex;align-items:center;justify-content:center;margin-bottom:20px;}
+.lock-icon .material-icons-round{font-size:40px;color:#fff;}
+.lock-title{font-size:1.4rem;font-weight:900;color:#fff;margin-bottom:6px;}
+.lock-sub{font-size:0.8rem;color:rgba(255,255,255,0.65);margin-bottom:30px;}
+.lock-input-wrap{background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.2);border-radius:14px;
+  display:flex;align-items:center;padding:4px 4px 4px 16px;width:280px;gap:8px;}
+.lock-input-wrap .material-icons-round{color:rgba(255,255,255,0.5);}
+#pwd-input{background:transparent;border:none;color:#fff;font-size:1rem;font-weight:700;
+  font-family:'Inter',sans-serif;flex:1;letter-spacing:2px;}
+#pwd-input::placeholder{color:rgba(255,255,255,0.35);letter-spacing:0;font-weight:500;}
+.btn-unlock{background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:10px;
+  width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.lock-error{color:#fca5a5;font-size:0.8rem;font-weight:700;margin-top:12px;min-height:20px;}
+
+.page{max-width:700px;margin:0 auto;padding:16px 12px;display:flex;flex-direction:column;gap:10px;}
+
+.acc-section{background:var(--card);border-radius:18px;border:1px solid var(--border);
+  overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.05);transition:box-shadow 0.2s;}
+.acc-section.open{box-shadow:0 4px 20px rgba(0,0,0,0.08);}
+.acc-header{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;
+  user-select:none;transition:background 0.15s;border-bottom:1px solid transparent;}
+.acc-section.open .acc-header{border-bottom-color:var(--border);}
+.acc-icon{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.acc-icon .material-icons-round{font-size:18px;}
+.acc-title-block{flex:1;}
+.acc-title{font-size:0.92rem;font-weight:800;color:var(--text);}
+.acc-desc{font-size:0.7rem;color:var(--text-sec);margin-top:1px;font-weight:500;}
+.acc-arrow{color:var(--text-sec);transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);}
+.acc-section.open .acc-arrow{transform:rotate(180deg);}
+.acc-body{display:none;flex-direction:column;}
+.acc-section.open .acc-body{display:flex;}
+
+.sub-section{border-bottom:1px solid var(--border);}
+.sub-section:last-child{border-bottom:none;}
+.sub-header{display:flex;align-items:center;gap:8px;padding:10px 18px 8px;
+  font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;
+  color:var(--text-sec);background:#f8fafc;cursor:pointer;user-select:none;}
+.sub-header .material-icons-round{font-size:13px;}
+.sub-arrow{margin-left:auto;font-size:14px!important;transition:transform 0.2s;}
+.sub-section.open .sub-arrow{transform:rotate(180deg);}
+.sub-body{display:none;}
+.sub-section.open .sub-body{display:block;}
+
+.row{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;
+  border-bottom:1px solid var(--border);gap:10px;}
+.row:last-child{border-bottom:none;}
+.row-label{font-size:0.86rem;font-weight:700;color:var(--text);flex:1;min-width:0;}
+.row-sub{font-size:0.68rem;color:var(--text-sec);font-weight:500;margin-top:2px;line-height:1.3;}
+.row-right{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+
+.big-toggle-row{display:flex;align-items:center;justify-content:space-between;
+  padding:13px 18px;border-bottom:1px solid var(--border);gap:10px;}
+.big-toggle-row:last-child{border-bottom:none;}
+.big-toggle-text h4{font-size:0.9rem;font-weight:800;color:var(--text);}
+.big-toggle-text p{font-size:0.7rem;color:var(--text-sec);margin-top:2px;font-weight:500;}
+
+input[type="text"],input[type="number"],select,textarea{
+  font-family:'Inter',sans-serif;font-size:0.82rem;font-weight:600;
+  border:1.5px solid var(--border);border-radius:9px;background:#f8fafc;color:var(--text);
+  padding:7px 10px;transition:border-color 0.2s,box-shadow 0.2s;}
+input[type="text"]:focus,input[type="number"]:focus,select:focus,textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.1);background:#fff;}
+input[type="color"]{width:40px;height:32px;padding:2px 3px;cursor:pointer;
+  border-radius:8px;border:1.5px solid var(--border);}
+input[type="text"]{width:120px;}
+input[type="number"]{width:70px;}
+select{cursor:pointer;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%2364748b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;-webkit-appearance:none;appearance:none;}
+textarea{width:100%;resize:vertical;min-height:80px;font-size:0.75rem;}
+
+.switch{position:relative;display:inline-block;width:46px;height:25px;flex-shrink:0;}
+.switch input{opacity:0;width:0;height:0;}
+.slider{position:absolute;cursor:pointer;inset:0;background:var(--border);transition:.3s;border-radius:25px;}
+.slider:before{position:absolute;content:"";height:17px;width:17px;left:4px;bottom:4px;
+  background:#fff;transition:.3s;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.2);}
+input:checked+.slider{background:var(--red);}
+input:checked+.slider:before{transform:translateX(21px);}
+
+.shift-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 18px;}
+.shift-block{border:1.5px solid var(--border);border-radius:12px;overflow:hidden;}
+.shift-block-header{padding:8px 12px;font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;}
+.shift-block-body{padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+.shift-color-row{display:flex;align-items:center;justify-content:space-between;}
+.shift-color-label{font-size:0.7rem;font-weight:600;color:var(--text-sec);}
+
+.driver-list,.holiday-list-wrap{display:flex;flex-direction:column;}
+.driver-item,.holiday-item{display:flex;align-items:center;gap:8px;padding:9px 18px;border-bottom:1px solid var(--border);}
+.driver-item:last-child,.holiday-item:last-child{border-bottom:none;}
+.driver-num{font-size:0.7rem;font-weight:800;color:var(--text-sec);width:18px;text-align:center;flex-shrink:0;}
+.driver-name-input{flex:1;}
+.btn-icon{background:#f8fafc;border:1.5px solid var(--border);border-radius:8px;
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.btn-icon .material-icons-round{font-size:15px;color:var(--text-sec);}
+.btn-icon.danger{border-color:#fca5a5;}
+.btn-icon.danger .material-icons-round{color:#dc2626;}
+.holiday-date-input{width:78px;}
+.holiday-name-input{flex:1;}
+
+.btn-add{display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 16px;border:1.5px dashed var(--border);background:#f8fafc;
+  border-radius:10px;cursor:pointer;font-size:0.8rem;font-weight:700;color:var(--text-sec);
+  transition:0.2s;width:100%;font-family:'Inter',sans-serif;}
+.btn-add:active{background:var(--card);}
+
+.btn-primary{display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:13px;border:none;border-radius:13px;cursor:pointer;
+  background:linear-gradient(135deg,#b91c1c,#dc2626);color:#fff;
+  font-weight:800;font-size:0.95rem;font-family:'Inter',sans-serif;
+  box-shadow:0 4px 15px rgba(220,38,38,0.3);transition:transform 0.15s;}
+.btn-primary:active{transform:scale(0.97);}
+.btn-primary.blue{background:linear-gradient(135deg,#1d4ed8,#2563eb);box-shadow:0 4px 15px rgba(37,99,235,0.3);}
+.btn-primary.green{background:linear-gradient(135deg,#047857,#059669);box-shadow:0 4px 15px rgba(5,150,105,0.3);}
+.btn-primary.orange{background:linear-gradient(135deg,#b45309,#d97706);box-shadow:0 4px 15px rgba(217,119,6,0.3);}
+
+.danger-row{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;}
+.btn-danger{display:flex;align-items:center;gap:6px;padding:9px 14px;
+  border:1.5px solid #fca5a5;background:#fff5f5;border-radius:10px;cursor:pointer;
+  font-size:0.78rem;font-weight:700;color:#dc2626;font-family:'Inter',sans-serif;transition:0.2s;}
+.btn-danger:active{background:#fee2e2;}
+
+.json-area{padding:14px 18px;}
+.export-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 18px;}
+
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:#0f172a;color:#fff;padding:10px 20px;border-radius:12px;
+  font-size:0.82rem;font-weight:700;z-index:9000;
+  transition:transform 0.35s cubic-bezier(0.16,1,0.3,1),opacity 0.3s;
+  opacity:0;white-space:nowrap;max-width:90vw;text-align:center;}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+#toast.success{background:#059669;}
+#toast.error{background:#dc2626;}
+
+.section-label{font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;
+  color:var(--text-sec);padding:6px 2px 2px;}
+
+.live-preview{padding:14px 18px;background:#f8fafc;border-bottom:1px solid var(--border);}
+.preview-label{font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text-sec);margin-bottom:8px;}
+.preview-row{display:flex;gap:6px;}
+.cell-preview{border-radius:10px;padding:10px 6px;text-align:center;font-weight:800;
+  font-size:0.8rem;display:flex;flex-direction:column;align-items:center;gap:3px;
+  min-height:56px;justify-content:center;flex:1;}
+
+.info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;
+  font-size:0.75rem;color:#1e40af;font-weight:500;line-height:1.5;margin:14px 18px 0;}
+
+/* Uniforma box */
+.uniforma-box{background:linear-gradient(135deg,#eff6ff,#e0f2fe);border:1.5px solid #93c5fd;
+  border-radius:14px;margin:14px 18px;padding:14px;}
+.uniforma-box h4{font-size:0.82rem;font-weight:800;color:#1e40af;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.uniforma-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.uniforma-field label{font-size:0.65rem;font-weight:700;color:#1e40af;display:block;margin-bottom:3px;}
+
+/* Paste area */
+.paste-area{padding:14px 18px;}
+.paste-area textarea{min-height:120px;font-family:monospace;font-size:0.7rem;background:#0f172a;color:#7dd3fc;border:none;border-radius:10px;padding:12px;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div id="lock-screen">
+  <div class="lock-icon"><span class="material-icons-round">admin_panel_settings</span></div>
+  <div class="lock-title">Area Admin</div>
+  <div class="lock-sub">A.S. 26 — San Marino</div>
+  <div class="lock-input-wrap">
+    <span class="material-icons-round">lock</span>
+    <input id="pwd-input" type="password" placeholder="Password admin..." autocomplete="off" onkeydown="if(event.key==='Enter')unlock()">
+    <button class="btn-unlock" onclick="unlock()"><span class="material-icons-round">arrow_forward</span></button>
+  </div>
+  <div class="lock-error" id="lock-error"></div>
+</div>
+
+<header>
+  <div class="hdr-left">
+    <div class="hdr-icon"><span class="material-icons-round" style="color:#fff;font-size:20px">admin_panel_settings</span></div>
+    <div><div class="hdr-title">Admin Panel</div><div class="hdr-sub">A.S. 26 — San Marino</div></div>
+  </div>
+  <div class="hdr-right">
+    <div id="save-status">
+      <span id="save-dot"></span>
+      <span id="save-label">Firebase</span>
+    </div>
+    <button class="btn-hdr" onclick="history.back()"><span class="material-icons-round">arrow_back</span></button>
+  </div>
+</header>
+
+<div class="page" id="main-page">
+
+  <!-- VISIBILITÀ -->
+  <div class="section-label">Pannello di controllo</div>
+  <div class="acc-section open" id="acc-visibility">
+    <div class="acc-header" onclick="toggleAcc('acc-visibility')">
+      <div class="acc-icon" style="background:#f0fdf4"><span class="material-icons-round" style="color:#16a34a">visibility</span></div>
+      <div class="acc-title-block"><div class="acc-title">Mostra / Nascondi</div><div class="acc-desc">Attiva e disattiva sezioni e funzionalità</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🔴 Barra Reperibilità</h4><p>Striscia colorata nelle celle turno</p></div><label class="switch"><input type="checkbox" id="tog-repbar" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🕐 Fasce Orarie</h4><p>Orari nella cella (6:30-13:15 ecc.)</p></div><label class="switch"><input type="checkbox" id="tog-timetag" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🐕 Icona Cane</h4><p>Icona animale sul turno solitario</p></div><label class="switch"><input type="checkbox" id="tog-dog" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🚗 Icona Veicolo</h4><p>Indicatore appuntamento officina</p></div><label class="switch"><input type="checkbox" id="tog-vehicle" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>📊 Contatori Turno</h4><p>Pallini M/P nella colonna data</p></div><label class="switch"><input type="checkbox" id="tog-dots" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🎉 Popup Changelog</h4><p>Novità al primo avvio versione</p></div><label class="switch"><input type="checkbox" id="tog-changelog" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🔔 Notifiche Reperibilità</h4><p>Avvisi automatici per reperibilità</p></div><label class="switch"><input type="checkbox" id="tog-repnotif" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🏥 Bottone Infermieri</h4><p>Pulsante verde in header</p></div><label class="switch"><input type="checkbox" id="tog-infbtn" checked onchange="schedSave()"><span class="slider"></span></label></div>
+      <div class="big-toggle-row"><div class="big-toggle-text"><h4>🍽️ Organizza Uscita</h4><p>Voce nel menu tre puntini</p></div><label class="switch"><input type="checkbox" id="tog-dinner" checked onchange="schedSave()"><span class="slider"></span></label></div>
+    </div>
+  </div>
+
+  <!-- AUTISTI -->
+  <div class="acc-section" id="acc-drivers">
+    <div class="acc-header" onclick="toggleAcc('acc-drivers')">
+      <div class="acc-icon" style="background:#eff6ff"><span class="material-icons-round" style="color:#2563eb">group</span></div>
+      <div class="acc-title-block"><div class="acc-title">Lista Autisti</div><div class="acc-desc">Nomi in intestazione colonne e opzioni</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div class="driver-list" id="driver-list"></div>
+      <div style="padding:10px 18px 14px">
+        <button class="btn-add" onclick="addDriver()"><span class="material-icons-round" style="font-size:15px">add</span> Aggiungi autista</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CELLE TURNO -->
+  <div class="acc-section" id="acc-cells">
+    <div class="acc-header" onclick="toggleAcc('acc-cells')">
+      <div class="acc-icon" style="background:#fef3c7"><span class="material-icons-round" style="color:#d97706">table_chart</span></div>
+      <div class="acc-title-block"><div class="acc-title">Celle Turno</div><div class="acc-desc">Dimensioni, forma, tipografia, colori</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+
+      <!-- SUB: Dimensioni + Uniforma -->
+      <div class="sub-section open" id="sub-cell-size">
+        <div class="sub-header" onclick="toggleSub('sub-cell-size')">
+          <span class="material-icons-round">straighten</span> Dimensioni & Uniforma
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div><div class="row-label">Altezza cella (px)</div><div class="row-sub">Min 20px — forza altezza identica su tutte le righe</div></div><input type="number" id="cfg-cellh" value="60" min="20" max="200" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Larghezza colonna autista (px)</div><div class="row-sub">Forza larghezza identica su tutte le colonne</div></div><input type="number" id="cfg-colw" value="110" min="60" max="250" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Larghezza colonna data (px)</div></div><input type="number" id="cfg-datecol-w" value="60" min="40" max="120" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Altezza barra rep. (px)</div></div><input type="number" id="cfg-repbarh" value="32" min="14" max="80" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Border radius cella (px)</div><div class="row-sub">Arrotondamento angoli delle celle</div></div><input type="number" id="cfg-radius" value="10" min="0" max="24" onchange="schedSave()"></div>
+
+          <!-- UNIFORMA BOX -->
+          <div class="uniforma-box">
+            <h4><span class="material-icons-round" style="font-size:16px">auto_fix_high</span> Uniforma tutte le celle</h4>
+            <p style="font-size:0.72rem;color:#1e40af;margin-bottom:10px;font-weight:500">
+              Imposta qui altezza e larghezza desiderate e premi il bottone — verranno applicate in modo identico a <b>tutte</b> le colonne e righe, eliminando le differenze.
+            </p>
+            <div class="uniforma-inputs">
+              <div class="uniforma-field">
+                <label>Altezza uniforme (px)</label>
+                <input type="number" id="unif-h" value="60" min="20" max="200" style="width:100%">
+              </div>
+              <div class="uniforma-field">
+                <label>Larghezza colonne (px)</label>
+                <input type="number" id="unif-w" value="110" min="60" max="250" style="width:100%">
+              </div>
+            </div>
+            <button class="btn-primary orange" onclick="applyUniform()" style="width:100%;font-size:0.82rem;padding:10px">
+              <span class="material-icons-round" style="font-size:17px">auto_fix_high</span> APPLICA — UNIFORMA TUTTO
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB: Tipografia -->
+      <div class="sub-section" id="sub-cell-typo">
+        <div class="sub-header" onclick="toggleSub('sub-cell-typo')">
+          <span class="material-icons-round">text_fields</span> Tipografia celle
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div><div class="row-label">Font nome turno (px)</div><div class="row-sub">Testo principale (MATTINA, POMERIGGIO...)</div></div><input type="number" id="cfg-font-cell" value="13" min="6" max="24" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Font orario turno (px)</div><div class="row-sub">Sotto-orario nella cella (6:30-13:15)</div></div><input type="number" id="cfg-font-time" value="11" min="5" max="18" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Font celle speciali (px)</div><div class="row-sub">Ferie, malattia, permesso, recupero</div></div><input type="number" id="cfg-font-spec" value="10" min="5" max="18" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Peso font celle</div></div>
+            <select id="cfg-font-weight" onchange="schedSave()">
+              <option value="600">Semi-bold (600)</option>
+              <option value="700">Bold (700)</option>
+              <option value="800" selected>Extra-bold (800)</option>
+              <option value="900">Black (900)</option>
+            </select>
+          </div>
+          <div class="row"><div><div class="row-label">Testo maiuscolo</div><div class="row-sub">Forza uppercase su M, P, RIPOSO ecc.</div></div><label class="switch"><input type="checkbox" id="cfg-uppercase" checked onchange="schedSave()"><span class="slider"></span></label></div>
+        </div>
+      </div>
+
+      <!-- SUB: Colori turni -->
+      <div class="sub-section" id="sub-shift-colors">
+        <div class="sub-header" onclick="toggleSub('sub-shift-colors')">
+          <span class="material-icons-round">palette</span> Colori turni principali
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="live-preview">
+            <div class="preview-label">Anteprima</div>
+            <div class="preview-row">
+              <div class="cell-preview" id="prev-M" style="background:#026bfe;color:#fff;border:1px solid #bae6fd">MATTINA<div style="font-size:0.6rem;opacity:0.85">6:30-13:15</div></div>
+              <div class="cell-preview" id="prev-P" style="background:#56a2ff;color:#fff;border:1px solid #c7d2fe">POMERIGGIO<div style="font-size:0.6rem;opacity:0.85">12:45-20:10</div></div>
+              <div class="cell-preview" id="prev-N" style="background:#003785;color:#fff;border:1px solid #c7d2fe">NOTTE<div style="font-size:0.6rem;opacity:0.85">19:45-00:00</div></div>
+              <div class="cell-preview" id="prev-SM" style="background:#10004f;color:#fff;border:1px solid #cbd5e1">SMONTO<div style="font-size:0.6rem;opacity:0.85">00:00-7:20</div></div>
+              <div class="cell-preview" id="prev-R" style="background:#ecfdf5;color:#059669;border:1px solid #6ee7b7">RIPOSO</div>
+            </div>
+          </div>
+          <div class="shift-grid">
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-M-hdr" style="background:#026bfe;color:#fff">MATTINA</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-M-bg" value="#026bfe" oninput="previewShift('M');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-M-text" value="#ffffff" oninput="previewShift('M');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Bordo</span><input type="color" id="c-M-border" value="#bae6fd" oninput="previewShift('M');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-P-hdr" style="background:#56a2ff;color:#fff">POMERIGGIO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-P-bg" value="#56a2ff" oninput="previewShift('P');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-P-text" value="#ffffff" oninput="previewShift('P');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Bordo</span><input type="color" id="c-P-border" value="#c7d2fe" oninput="previewShift('P');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-N-hdr" style="background:#003785;color:#fff">NOTTE</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-N-bg" value="#003785" oninput="previewShift('N');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-N-text" value="#ffffff" oninput="previewShift('N');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Bordo</span><input type="color" id="c-N-border" value="#c7d2fe" oninput="previewShift('N');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-SM-hdr" style="background:#10004f;color:#fff">SMONTO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-SM-bg" value="#10004f" oninput="previewShift('SM');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-SM-text" value="#ffffff" oninput="previewShift('SM');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Bordo</span><input type="color" id="c-SM-border" value="#cbd5e1" oninput="previewShift('SM');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-R-hdr" style="background:#ecfdf5;color:#059669">RIPOSO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-R-bg" value="#ecfdf5" oninput="previewShift('R');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-R-text" value="#059669" oninput="previewShift('R');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Bordo</span><input type="color" id="c-R-border" value="#6ee7b7" oninput="previewShift('R');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" style="background:#16a34a;color:#fff">REP. BARRA COLORI</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Titolare (verde)</span><input type="color" id="c-rep-own" value="#16a34a" oninput="schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Copertura (giallo)</span><input type="color" id="c-rep-cover" value="#ca8a04" oninput="schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Ceduto (rosso)</span><input type="color" id="c-rep-sub" value="#dc2626" oninput="schedSave()"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB: Testo barra reperibilità -->
+      <div class="sub-section" id="sub-rep-text">
+        <div class="sub-header" onclick="toggleSub('sub-rep-text')">
+          <span class="material-icons-round">format_size</span> Testo barra reperibilità
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div style="padding:10px 18px 6px;font-size:0.72rem;color:var(--text-sec);font-weight:500;line-height:1.4">
+            Controlla la dimensione e il colore del testo nelle fasce della barra reperibilità (l'orario tipo "13-20" e il nome del collega tipo "BARBIERI").
+          </div>
+          <div class="row"><div><div class="row-label">Font orario fascia (px)</div><div class="row-sub">Testo "13-20", "00-07" ecc.</div></div><input type="number" id="cfg-rep-time-size" value="9" min="5" max="16" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Colore orario fascia</div><div class="row-sub">Colore del testo orario</div></div><input type="color" id="cfg-rep-time-color" value="#ffffff" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Font nome collega (px)</div><div class="row-sub">Testo "BARBIERI", "SARTI" nella fascia ceduta</div></div><input type="number" id="cfg-rep-name-size" value="7" min="4" max="14" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Colore nome collega</div><div class="row-sub">Colore del nome nella fascia</div></div><input type="color" id="cfg-rep-name-color" value="#ffffff" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Font peso testo barra</div></div>
+            <select id="cfg-rep-font-weight" onchange="schedSave()">
+              <option value="700">Bold (700)</option>
+              <option value="800">Extra-bold (800)</option>
+              <option value="900" selected>Black (900)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB: Colori assenze -->
+      <div class="sub-section" id="sub-special-colors">
+        <div class="sub-header" onclick="toggleSub('sub-special-colors')">
+          <span class="material-icons-round">color_lens</span> Colori assenze
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="shift-grid">
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-ferie" style="background:#ff782f;color:#fff">FERIE</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-ferie-bg" value="#ff782f" oninput="previewSpecial('ferie');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-ferie-text" value="#ffffff" oninput="previewSpecial('ferie');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-perm" style="background:#00e749;color:#000">PERMESSO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-perm-bg" value="#00e749" oninput="previewSpecial('perm');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-perm-text" value="#000000" oninput="previewSpecial('perm');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-cong" style="background:#ffea00;color:#000">CONGEDO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-cong-bg" value="#ffea00" oninput="previewSpecial('cong');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-cong-text" value="#000000" oninput="previewSpecial('cong');schedSave()"></div>
+              </div>
+            </div>
+            <div class="shift-block">
+              <div class="shift-block-header" id="prev-rec" style="background:#d00173;color:#ffe8f2">RECUPERO</div>
+              <div class="shift-block-body">
+                <div class="shift-color-row"><span class="shift-color-label">Sfondo</span><input type="color" id="c-rec-bg" value="#d00173" oninput="previewSpecial('rec');schedSave()"></div>
+                <div class="shift-color-row"><span class="shift-color-label">Testo</span><input type="color" id="c-rec-text" value="#ffe8f2" oninput="previewSpecial('rec');schedSave()"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB: Fasce orarie -->
+      <div class="sub-section" id="sub-schedules">
+        <div class="sub-header" onclick="toggleSub('sub-schedules')">
+          <span class="material-icons-round">schedule</span> Fasce orarie
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div class="row-label">Mattina</div><input type="text" id="sched-M" value="6:30-13:15" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Pomeriggio</div><input type="text" id="sched-P" value="12:45-20:10" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Notte</div><input type="text" id="sched-N" value="19:45-00:00" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Smonto</div><input type="text" id="sched-SM" value="00:00-7:20" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Mattina diurno (m)</div><input type="text" id="sched-mD" value="6:30-13:42" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Pomeriggio diurno (p)</div><input type="text" id="sched-pD" value="13:15-20:27" style="width:110px" onchange="schedSave()"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- COLONNA DATA -->
+  <div class="acc-section" id="acc-datecol">
+    <div class="acc-header" onclick="toggleAcc('acc-datecol')">
+      <div class="acc-icon" style="background:#f0f9ff"><span class="material-icons-round" style="color:#0284c7">calendar_today</span></div>
+      <div class="acc-title-block"><div class="acc-title">Colonna Data</div><div class="acc-desc">Font, colori, festivi, orientamento giorno</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+
+      <div class="sub-section open" id="sub-date-layout">
+        <div class="sub-header" onclick="toggleSub('sub-date-layout')">
+          <span class="material-icons-round">view_column</span> Layout & Font
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div><div class="row-label">Font numero giorno (px)</div><div class="row-sub">La cifra grande del giorno (es: "15")</div></div><input type="number" id="cfg-date-fontsize" value="17" min="10" max="30" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Font giorno settimana (px)</div><div class="row-sub">LUN, MAR, MER... sotto il numero</div></div><input type="number" id="cfg-date-daysize" value="11" min="6" max="18" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Peso font data</div></div>
+            <select id="cfg-date-weight" onchange="schedSave()">
+              <option value="700">Bold (700)</option>
+              <option value="800" selected>Extra-bold (800)</option>
+              <option value="900">Black (900)</option>
+            </select>
+          </div>
+          <div class="row"><div><div class="row-label">Mostra nome giorno sett.</div><div class="row-sub">LUN, MAR, MER nella cella data</div></div><label class="switch"><input type="checkbox" id="cfg-show-dayname" checked onchange="schedSave()"><span class="slider"></span></label></div>
+          <div class="row"><div><div class="row-label">Mostra SABATO/DOMENICA</div><div class="row-sub">Etichetta verticale weekend</div></div><label class="switch"><input type="checkbox" id="cfg-show-weekend-label" checked onchange="schedSave()"><span class="slider"></span></label></div>
+        </div>
+      </div>
+
+      <div class="sub-section" id="sub-date-colors">
+        <div class="sub-header" onclick="toggleSub('sub-date-colors')">
+          <span class="material-icons-round">format_color_fill</span> Colori
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div><div class="row-label">Sfondo giorno normale</div></div><input type="color" id="cfg-date-bg" value="#f8fafc" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Testo giorno normale</div></div><input type="color" id="cfg-date-text" value="#0f172a" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Sfondo giorno festivo/weekend</div></div><input type="color" id="cfg-date-red-bg" value="#fef2f2" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Testo giorno festivo/weekend</div></div><input type="color" id="cfg-date-red-text" value="#dc2626" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Colore bordo destro colonna</div></div><input type="color" id="cfg-date-border" value="#e2e8f0" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Sfondo riga "oggi"</div></div><input type="color" id="cfg-today-bg" value="#fff7ed" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Colore bordo riga "oggi"</div></div><input type="color" id="cfg-today-border" value="#f97316" onchange="schedSave()"></div>
+        </div>
+      </div>
+
+      <div class="sub-section" id="sub-date-holidays">
+        <div class="sub-header" onclick="toggleSub('sub-date-holidays')">
+          <span class="material-icons-round">flag</span> Festivi
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row">
+            <div><div class="row-label">Orientamento nome festivo</div><div class="row-sub">Come appare "CAPODANNO", "NATALE" ecc.</div></div>
+            <select id="cfg-holiday-orient" onchange="schedSave()">
+              <option value="vertical" selected>Verticale (ruotato)</option>
+              <option value="horizontal">Orizzontale</option>
+              <option value="hidden">Nascosto</option>
+            </select>
+          </div>
+          <div class="row"><div><div class="row-label">Colore nome festivo</div></div><input type="color" id="cfg-holiday-color" value="#dc2626" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Dimensione font festivo (px)</div></div><input type="number" id="cfg-holiday-fontsize" value="7" min="4" max="14" onchange="schedSave()"></div>
+          <div style="padding:8px 18px 4px;font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text-sec)">Elenco Festività</div>
+          <div class="holiday-list-wrap" id="holiday-list"></div>
+          <div style="padding:10px 18px 14px">
+            <button class="btn-add" onclick="addHoliday()"><span class="material-icons-round" style="font-size:15px">add</span> Aggiungi festività</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- GENERALI -->
+  <div class="acc-section" id="acc-general">
+    <div class="acc-header" onclick="toggleAcc('acc-general')">
+      <div class="acc-icon" style="background:#f5f3ff"><span class="material-icons-round" style="color:#7c3aed">tune</span></div>
+      <div class="acc-title-block"><div class="acc-title">Impostazioni Generali</div><div class="acc-desc">Anno, titolo, colori globali, URL</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div class="sub-section open" id="sub-app-info">
+        <div class="sub-header" onclick="toggleSub('sub-app-info')">
+          <span class="material-icons-round">info</span> Informazioni App
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div class="row-label">Anno turni</div><input type="text" id="cfg-year" value="2026" style="width:80px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Titolo App</div><input type="text" id="cfg-title" value="A.S. 26" style="width:100px" onchange="schedSave()"></div>
+          <div class="row"><div class="row-label">Sottotitolo</div><input type="text" id="cfg-subtitle" value="San Marino" style="width:110px" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Nome file Excel</div><div class="row-sub">File turni su GitHub</div></div><input type="text" id="cfg-filename" value="turni.xlsx" onchange="schedSave()"></div>
+        </div>
+      </div>
+      <div class="sub-section" id="sub-app-colors">
+        <div class="sub-header" onclick="toggleSub('sub-app-colors')">
+          <span class="material-icons-round">color_lens</span> Colori globali
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div class="row"><div><div class="row-label">Colore primario (accent)</div><div class="row-sub">Pulsanti, chip, selezioni</div></div><input type="color" id="cfg-primary" value="#2563eb" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Inizio gradiente mese</div><div class="row-sub">Barra "GENNAIO 2026"</div></div><input type="color" id="cfg-month-bg-start" value="#1e3a8a" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Fine gradiente mese</div></div><input type="color" id="cfg-month-bg-end" value="#3b82f6" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Sfondo app</div></div><input type="color" id="cfg-app-bg" value="#f8fafc" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Sfondo card/celle</div></div><input type="color" id="cfg-card-bg" value="#ffffff" onchange="schedSave()"></div>
+          <div class="row"><div><div class="row-label">Colore bordi</div></div><input type="color" id="cfg-border-color" value="#e2e8f0" onchange="schedSave()"></div>
+        </div>
+      </div>
+      <div class="sub-section" id="sub-app-links">
+        <div class="sub-header" onclick="toggleSub('sub-app-links')">
+          <span class="material-icons-round">link</span> URL
+          <span class="material-icons-round sub-arrow">expand_more</span>
+        </div>
+        <div class="sub-body">
+          <div style="padding:10px 18px">
+            <div style="font-size:0.82rem;font-weight:700;margin-bottom:6px">URL Turni Infermieri</div>
+            <input type="text" id="cfg-inf-url" value="https://centrale118rsm-code.github.io/Turni-Infermieri-2026/" style="width:100%;font-size:0.72rem" onchange="schedSave()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ESPORTA -->
+  <div class="acc-section" id="acc-export">
+    <div class="acc-header" onclick="toggleAcc('acc-export')">
+      <div class="acc-icon" style="background:#f0fdf4"><span class="material-icons-round" style="color:#16a34a">import_export</span></div>
+      <div class="acc-title-block"><div class="acc-title">Esporta index.html</div><div class="acc-desc">Incolla il tuo turni.html e scarica index.html completo con tutte le modifiche</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div class="info-box">
+        <strong>📋 Come funziona:</strong><br>
+        1. Apri il file <code>turni.html</code> con un editor di testo (Blocco Note, VSCode ecc.)<br>
+        2. Seleziona tutto (Ctrl+A) e copialo<br>
+        3. Incollalo nel campo qui sotto<br>
+        4. Premi <strong>Genera index.html</strong> — scarichi il file completo con tutte le modifiche già dentro
+      </div>
+      <div class="paste-area">
+        <div style="font-size:0.7rem;font-weight:700;color:var(--text-sec);margin-bottom:6px">Incolla qui il contenuto di turni.html:</div>
+        <textarea id="html-paste" placeholder="Incolla qui il codice HTML di turni.html..." style="min-height:140px;font-family:monospace;font-size:0.7rem;background:#0f172a;color:#7dd3fc;border:none;border-radius:10px;padding:12px;width:100%"></textarea>
+      </div>
+      <div style="padding:0 18px 14px;display:flex;flex-direction:column;gap:8px">
+        <button class="btn-primary green" onclick="generateIndexHtml()" style="font-size:0.85rem">
+          <span class="material-icons-round" style="font-size:18px">download</span> GENERA E SCARICA index.html
+        </button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn-add" onclick="generateJson()"><span class="material-icons-round" style="font-size:15px">data_object</span> Genera JSON</button>
+          <button class="btn-add" onclick="copyJson()"><span class="material-icons-round" style="font-size:15px">content_copy</span> Copia JSON</button>
+        </div>
+        <textarea id="json-export" style="font-family:monospace;font-size:0.7rem;background:#0f172a;color:#7dd3fc;border:none;border-radius:10px;padding:12px;min-height:80px;width:100%;display:none" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- FIREBASE -->
+  <div class="acc-section" id="acc-firebase">
+    <div class="acc-header" onclick="toggleAcc('acc-firebase')">
+      <div class="acc-icon" style="background:#fff7ed"><span class="material-icons-round" style="color:#f97316">local_fire_department</span></div>
+      <div class="acc-title-block"><div class="acc-title">Firebase</div><div class="acc-desc">Auto-save attivo — ogni modifica si salva entro 800ms</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div style="padding:12px 18px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;display:flex;gap:10px;align-items:flex-start">
+        <span class="material-icons-round" style="color:#16a34a;font-size:18px;flex-shrink:0;margin-top:2px">check_circle</span>
+        <div style="font-size:0.78rem;color:#14532d;line-height:1.5;font-weight:500">
+          Ogni modifica viene salvata automaticamente su <code style="background:#bbf7d0;padding:1px 5px;border-radius:4px;font-size:0.7rem">as26_config/settings</code> e applicata in <b>real-time</b> su tutti i dispositivi.
+          <div style="margin-top:12px;padding:12px;background:#fef9c3;border:1px solid #fde047;border-radius:10px;font-size:0.78rem;">
+            <b>📋 Regole Firestore consigliate</b> — copia nella console Firebase → Firestore → Regole:<br>
+            <code style="display:block;background:#0f172a;color:#7dd3fc;padding:10px;border-radius:8px;margin-top:8px;font-size:0.7rem;white-space:pre-wrap;">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Profilo personale + impegni privati
+    match /users/{uid} {
+      allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;
+      match /appointments/{doc} {
+        allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;
+      }
+    }
+    // Impegni condivisi
+    match /shared_appointments/{doc} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &amp;&amp; request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if request.auth != null &amp;&amp; resource.data.ownerUid == request.auth.uid;
+    }
+    // Collezioni operative (aperte anche ad ospiti)
+    match /richieste_turni/{doc} { allow read, write: if true; }
+    match /as26_config/{doc}     { allow read, write: if true; }
+    match /gestionale_118/{doc}  { allow read, write: if true; }
+
+    // ✅ AGGIUNGI QUESTA — Sessioni di monitoraggio accessi
+    match /as26_sessions/{doc} {
+      allow write: if true;              // tutti scrivono la propria sessione
+      allow read:  if request.auth != null;  // solo autenticati leggono
+    }
+
+    // Tutto il resto: bloccato
+    match /{document=**} { allow read, write: if false; }
+  }
+}</code>
+          </div>
+        </div>
+      </div>
+      <div style="padding:14px 18px;display:flex;gap:8px">
+        <button class="btn-add" style="flex:1" onclick="window.open('https://console.firebase.google.com/project/area-personale-autsocc-118-rsm/firestore','_blank')">
+          <span class="material-icons-round" style="font-size:15px">storage</span> Apri Firestore
+        </button>
+        <button class="btn-add" style="flex:1" onclick="loadFromFirebase()">
+          <span class="material-icons-round" style="font-size:15px">cloud_download</span> Ricarica da DB
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AZIONI PERICOLOSE -->
+  <div class="acc-section" id="acc-danger">
+    <div class="acc-header" onclick="toggleAcc('acc-danger')">
+      <div class="acc-icon" style="background:#fef2f2"><span class="material-icons-round" style="color:#dc2626">warning</span></div>
+      <div class="acc-title-block"><div class="acc-title">Azioni</div><div class="acc-desc">Operazioni su localStorage — solo per debug</div></div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body">
+      <div class="danger-row">
+        <button class="btn-danger" onclick="clearNotifications()"><span class="material-icons-round" style="font-size:15px">delete_sweep</span> Cancella notifiche</button>
+        <button class="btn-danger" onclick="resetChangelog()"><span class="material-icons-round" style="font-size:15px">restart_alt</span> Reset changelog</button>
+        <button class="btn-danger" onclick="clearAllStorage()"><span class="material-icons-round" style="font-size:15px">delete_forever</span> Reset COMPLETO localStorage</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SEZIONE MONITORAGGIO ACCESSI ══ -->
+  <div class="acc-section" id="acc-monitoring">
+    <div class="acc-header" onclick="toggleAcc('acc-monitoring')">
+      <div class="acc-icon" style="background:linear-gradient(135deg,#0f172a,#1e3a8a)"><span class="material-icons-round" style="color:#fff">monitor_heart</span></div>
+      <div class="acc-title-block">
+        <div class="acc-title" style="color:#1e3a8a">📡 Monitoraggio Accessi</div>
+        <div class="acc-desc">Chi è online, accessi recenti, attività e durata</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-right:8px;">
+        <span id="online-badge" style="background:#16a34a;color:#fff;font-size:0.65rem;font-weight:900;padding:3px 10px;border-radius:20px;display:none;">● ONLINE</span>
+      </div>
+      <span class="material-icons-round acc-arrow">expand_more</span>
+    </div>
+    <div class="acc-body" style="flex-direction:column;gap:0;padding:0;">
+
+      <!-- Utenti ora online -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+        <div style="font-size:0.65rem;font-weight:800;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+          <span class="material-icons-round" style="font-size:14px;color:#16a34a">fiber_manual_record</span> Ora online
+          <span style="margin-left:auto;background:var(--bg);color:var(--text-sec);font-size:0.65rem;padding:2px 8px;border-radius:10px;cursor:pointer;" onclick="loadOnlineUsers()">↻ Aggiorna</span>
+        </div>
+        <div id="online-users-list" style="display:flex;flex-wrap:wrap;gap:8px;">
+          <div style="color:var(--text-sec);font-size:0.82rem;">Caricamento...</div>
+        </div>
+      </div>
+
+      <!-- Filtri -->
+      <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <div style="font-size:0.72rem;font-weight:700;color:var(--text-sec);">Filtra:</div>
+        <select id="mon-filter-user" style="flex:1;min-width:100px;padding:7px 10px;border-radius:9px;border:1px solid var(--border);font-size:0.78rem;background:var(--bg);color:var(--text-main);" onchange="loadAccessLog()">
+          <option value="">Tutti gli utenti</option>
+        </select>
+        <select id="mon-filter-period" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);font-size:0.78rem;background:var(--bg);color:var(--text-main);" onchange="loadAccessLog()">
+          <option value="24">Ultime 24h</option>
+          <option value="72">Ultimi 3 giorni</option>
+          <option value="168">Ultima settimana</option>
+          <option value="720">Ultimo mese</option>
+          <option value="0">Tutti</option>
+        </select>
+        <button onclick="exportAccessLog()" style="padding:7px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg);color:var(--text-main);font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+          <span class="material-icons-round" style="font-size:15px">download</span> CSV
+        </button>
+      </div>
+
+      <!-- Statistiche rapide -->
+      <div id="mon-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid var(--border);">
+        <div style="padding:14px 16px;text-align:center;border-right:1px solid var(--border);">
+          <div id="mon-stat-total" style="font-size:1.6rem;font-weight:900;color:#2563eb;">—</div>
+          <div style="font-size:0.62rem;font-weight:700;color:var(--text-sec);margin-top:2px;">ACCESSI TOTALI</div>
+        </div>
+        <div style="padding:14px 16px;text-align:center;border-right:1px solid var(--border);">
+          <div id="mon-stat-unique" style="font-size:1.6rem;font-weight:900;color:#7c3aed;">—</div>
+          <div style="font-size:0.62rem;font-weight:700;color:var(--text-sec);margin-top:2px;">UTENTI UNICI</div>
+        </div>
+        <div style="padding:14px 16px;text-align:center;">
+          <div id="mon-stat-avgtime" style="font-size:1.6rem;font-weight:900;color:#059669;">—</div>
+          <div style="font-size:0.62rem;font-weight:700;color:var(--text-sec);margin-top:2px;">MIN MEDI/SESS.</div>
+        </div>
+      </div>
+
+      <!-- Log accessi -->
+      <div id="access-log-container" style="max-height:500px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+        <div style="padding:20px;text-align:center;color:var(--text-sec);font-size:0.82rem;">Seleziona il periodo e attendi il caricamento...</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+// ── FIREBASE ──
+const firebaseConfig={apiKey:"AIzaSyAMX2ycf_6P3AcBvarVX4XNKbdposkuqgE",authDomain:"area-personale-autsocc-118-rsm.firebaseapp.com",projectId:"area-personale-autsocc-118-rsm",storageBucket:"area-personale-autsocc-118-rsm.firebasestorage.app",messagingSenderId:"910283994567",appId:"1:910283994567:web:d9c45b5f4b5a83b92595e2"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+const auth=firebase.auth();
+const CONFIG_DOC=db.collection('as26_config').doc('settings');
+
+// ── AUTENTICAZIONE ADMIN ──
+let _adminAuthed = false;
+let _useRestFallback = false; // true se signInAnonymously non è disponibile
+
+function ensureAdminAuth(){
+    return new Promise((resolve) => {
+        // Se già autenticato, procedi
+        if(_adminAuthed && auth.currentUser){ resolve(); return; }
+        // Se già sappiamo che REST è necessario, procedi
+        if(_useRestFallback){ resolve(); return; }
+        auth.signInAnonymously()
+            .then(() => { _adminAuthed = true; resolve(); })
+            .catch(e => {
+                console.warn('signInAnonymously non disponibile:', e.code);
+                _useRestFallback = true;
+                resolve(); // Procedi comunque, useremo REST API per le sessioni
+            });
+    });
+}
+
+// Lettura as26_sessions via REST API Firestore (fallback senza auth)
+// Usa la REST API pubblica con apiKey — funziona se le regole permettono read: if true
+// NOTA: per sicurezza mantieni le regole con read: if request.auth != null
+//       e abilita il provider Anonimo su Firebase Authentication
+function fetchSessionsViaRest(hoursFilter, userFilter){
+    const PROJECT = firebaseConfig.projectId;
+    const API_KEY = firebaseConfig.apiKey;
+    const BASE = 'https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents';
+    const url = BASE+'/as26_sessions?pageSize=200&key='+API_KEY;
+    return fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            if(data.error) throw new Error(data.error.message);
+            const docs = data.documents || [];
+            return docs.map(d => {
+                const f = d.fields || {};
+                const getStr = k => f[k] ? (f[k].stringValue||f[k].booleanValue||f[k].integerValue||'') : '';
+                const getBool = k => f[k] ? !!f[k].booleanValue : false;
+                const getArr = k => f[k] && f[k].arrayValue && f[k].arrayValue.values
+                    ? f[k].arrayValue.values.map(v=>v.stringValue||'') : [];
+                const getInt = k => f[k] ? parseInt(f[k].integerValue||0) : 0;
+                return {
+                    id: d.name.split('/').pop(),
+                    name: getStr('name'),
+                    operatorName: getStr('operatorName'),
+                    role: getStr('role'),
+                    device: getStr('device'),
+                    startedAt: getStr('startedAt'),
+                    lastSeen: getStr('lastSeen'),
+                    endedAt: getStr('endedAt'),
+                    isOnline: getBool('isOnline'),
+                    pagesViewed: getArr('pagesViewed'),
+                    durationMin: getInt('durationMin'),
+                };
+            });
+        });
+}
+
+const DEFAULT_DRIVERS=["Barbieri","Pazzaglia","Bianchi","Sarti","Ghiotti","Berardi","Michelotti","Volpini","Fabbri"];
+const DEFAULT_HOLIDAYS=[{key:"0-1",name:"CAPODANNO"},{key:"0-6",name:"EPIFANIA"},{key:"1-5",name:"S. AGATA"},{key:"2-25",name:"ARENGO"},{key:"3-1",name:"REGGENZA"},{key:"3-5",name:"PASQUA"},{key:"3-6",name:"LUN. ANGELO"},{key:"4-1",name:"1° MAGGIO"},{key:"5-4",name:"CORPUS DOM."},{key:"6-28",name:"LIBERAZIONE"},{key:"7-15",name:"FERRAGOSTO"},{key:"8-3",name:"S. MARINO"},{key:"9-1",name:"REGGENZA"},{key:"10-1",name:"OGNISSANTI"},{key:"10-2",name:"COMM. DEFUNTI"},{key:"11-8",name:"IMMACOLATA"},{key:"11-25",name:"NATALE"},{key:"11-26",name:"S. STEFANO"}];
+
+// ── AUTO-SAVE ──
+let saveTimer=null,isSaving=false;
+function schedSave(){clearTimeout(saveTimer);setSaveStatus('saving','Salvataggio...');saveTimer=setTimeout(doSave,800);}
+function setSaveStatus(state,label){const dot=document.getElementById('save-dot'),lbl=document.getElementById('save-label');dot.className=state;lbl.textContent=label;}
+function doSave(){if(isSaving)return;isSaving=true;CONFIG_DOC.set(collectConfig()).then(()=>{setSaveStatus('saved','Salvato ✓');isSaving=false;setTimeout(()=>setSaveStatus('saved','Online'),3000);}).catch(e=>{setSaveStatus('error','Errore!');isSaving=false;showToast('❌ '+e.message,'error');});}
+
+// ── LOCK ──
+function unlock(){
+    const pwd=document.getElementById('pwd-input').value.trim().toLowerCase();
+    if(pwd==='ambulanza'){
+        document.getElementById('lock-screen').style.display='none';
+        // Autenticati prima di caricare
+        ensureAdminAuth().then(() => loadFromFirebase());
+    } else {
+        const err=document.getElementById('lock-error');
+        err.textContent='❌ Password errata. Riprova.';
+        document.getElementById('pwd-input').value='';
+        document.getElementById('pwd-input').focus();
+        setTimeout(()=>err.textContent='',3000);
+    }
+}
+
+// ── ACCORDION ──
+function toggleAcc(id){
+    document.getElementById(id).classList.toggle('open');
+    if(id==='acc-monitoring' && document.getElementById(id).classList.contains('open')){
+        loadOnlineUsers();
+        loadAccessLog();
+    }
+}
+
+// ══════════════════════════════════════════════════════════════
+// MONITORAGGIO ACCESSI
+// ══════════════════════════════════════════════════════════════
+const SESSIONS_COL = db.collection('as26_sessions');
+let _accessLogCache = [];
+
+// Carica utenti online (sessione attiva negli ultimi 5 minuti)
+function renderOnlineUsers(sessions){
+    const cutoff5m = Date.now() - 5*60*1000;
+    const badge = document.getElementById('online-badge');
+    const container = document.getElementById('online-users-list');
+    if(!container) return;
+    const online = sessions.filter(d => {
+        if(!d.lastSeen) return false;
+        return new Date(d.lastSeen).getTime() >= cutoff5m;
+    });
+    if(online.length === 0){
+        container.innerHTML = '<div style="color:var(--text-sec);font-size:0.82rem;padding:4px 0">Nessun utente online in questo momento</div>';
+        if(badge) badge.style.display='none';
+        return;
+    }
+    if(badge){ badge.style.display='inline-block'; badge.textContent='● '+online.length+' ONLINE'; }
+    container.innerHTML = '';
+    online.forEach(d => {
+        const name = d.name || d.operatorName || 'Utente';
+        const role = d.role || 'guest';
+        const lastSeen = d.lastSeen ? new Date(d.lastSeen) : null;
+        const sinceMin = lastSeen ? Math.round((Date.now()-lastSeen.getTime())/60000) : null;
+        const roleColor = role==='operator'?'#2563eb':role==='centrale'?'#7c3aed':'#64748b';
+        const chip = document.createElement('div');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:'+roleColor+'18;border:1px solid '+roleColor+'44;border-radius:20px;padding:6px 12px;font-size:0.78rem;font-weight:700;color:'+roleColor+';';
+        chip.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 6px #16a34a;flex-shrink:0;"></span>'
+            + name
+            + (sinceMin!==null?'<span style="font-size:0.62rem;opacity:0.7;font-weight:600;margin-left:2px;">'+sinceMin+'m fa</span>':'');
+        container.appendChild(chip);
+    });
+}
+
+function loadOnlineUsers(){
+    ensureAdminAuth().then(() => {
+        if(_useRestFallback){
+            fetchSessionsViaRest().then(renderOnlineUsers).catch(e=>{
+                const c=document.getElementById('online-users-list');
+                if(c)c.innerHTML='<div style="color:#ef4444;font-size:0.78rem">'+e.message+'</div>';
+            });
+            return;
+        }
+        const cutoff = new Date(Date.now() - 5*60*1000);
+        SESSIONS_COL
+            .where('lastSeen', '>=', cutoff.toISOString())
+            .orderBy('lastSeen','desc')
+            .get()
+            .then(snap => {
+                const sessions = [];
+                snap.forEach(doc => sessions.push(Object.assign({id:doc.id},doc.data())));
+                renderOnlineUsers(sessions);
+            })
+            .catch(e => {
+                const c = document.getElementById('online-users-list');
+                if(c) c.innerHTML = '<div style="color:#ef4444;font-size:0.78rem">'+e.message+'<br><span style="opacity:0.7">Verifica che il provider Anonimo sia abilitato su Firebase Auth</span></div>';
+            });
+    });
+}
+
+// Carica log accessi
+function processSessionsData(sessions){
+    const hours = parseInt(document.getElementById('mon-filter-period')?.value || '24');
+    const userFilter = document.getElementById('mon-filter-user')?.value || '';
+    const cutoff = hours > 0 ? new Date(Date.now() - hours*60*60*1000).toISOString() : null;
+
+    _accessLogCache = sessions.filter(d => !cutoff || (d.startedAt && d.startedAt >= cutoff));
+    _accessLogCache.sort((a,b) => (b.startedAt||'').localeCompare(a.startedAt||''));
+
+    const userSet = new Set();
+    let totalMin = 0, countWithTime = 0;
+    _accessLogCache.forEach(d => {
+        const name = d.name || d.operatorName || '';
+        if(name) userSet.add(name);
+        if(d.durationMin){ totalMin += d.durationMin; countWithTime++; }
+    });
+
+    const el = id => document.getElementById(id);
+    if(el('mon-stat-total')) el('mon-stat-total').textContent = _accessLogCache.length;
+    if(el('mon-stat-unique')) el('mon-stat-unique').textContent = userSet.size;
+    if(el('mon-stat-avgtime')) el('mon-stat-avgtime').textContent = countWithTime>0?Math.round(totalMin/countWithTime):'—';
+
+    const userSel = document.getElementById('mon-filter-user');
+    if(userSel && userSel.options.length < 2){
+        [...userSet].sort().forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            userSel.appendChild(opt);
+        });
+    }
+
+    let filtered = _accessLogCache;
+    if(userFilter) filtered = filtered.filter(d => (d.name||d.operatorName||'')===userFilter);
+    renderAccessLog(filtered);
+}
+
+function loadAccessLog(){
+    const container = document.getElementById('access-log-container');
+    if(container) container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-sec);font-size:0.82rem;">⏳ Caricamento...</div>';
+
+    ensureAdminAuth().then(() => {
+        // Fallback REST se signInAnonymously non disponibile
+        if(_useRestFallback){
+            fetchSessionsViaRest()
+                .then(sessions => processSessionsData(sessions))
+                .catch(e => {
+                    if(container) container.innerHTML = showPermissionError(e.message);
+                });
+            return;
+        }
+        // Firestore SDK
+        SESSIONS_COL.orderBy('startedAt','desc').limit(500).get()
+            .then(snap => {
+                const sessions = [];
+                snap.forEach(doc => sessions.push(Object.assign({id:doc.id}, doc.data())));
+                processSessionsData(sessions);
+            })
+            .catch(e => {
+                if(container) container.innerHTML = showPermissionError(e.message);
+            });
+    });
+}
+
+function showPermissionError(msg){
+    var rulesCode = 'match /as26_sessions/{doc} {\n  allow write: if true;\n  allow read: if request.auth != null;\n}';
+    return '<div style="padding:16px 20px;color:#ef4444;font-size:0.82rem;line-height:1.7;">'
+        +'<b>⚠️ Errore permessi Firestore</b><br>'
+        +msg+'<br><br>'
+        +'<b>Soluzione rapida</b> — aggiungi nelle regole Firestore:<br>'
+        +'<code style="background:#0f172a;color:#7dd3fc;padding:8px 12px;border-radius:8px;display:block;margin-top:6px;font-size:0.75rem;white-space:pre;">'+rulesCode+'</code>'
+        +'<br>Poi abilita <b>Authentication → Anonimo</b> nella console Firebase.'
+        +'</div>';
+}
+
+function renderAccessLog(sessions){
+    const container = document.getElementById('access-log-container');
+    if(!container) return;
+    if(!sessions||sessions.length===0){
+        container.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-sec);font-size:0.82rem;">Nessun accesso registrato nel periodo selezionato</div>';
+        return;
+    }
+
+    const ROLE_META = {
+        'operator':  {label:'Operatore', color:'#2563eb', icon:'person'},
+        'centrale':  {label:'Centrale',  color:'#7c3aed', icon:'radio'},
+        'guest':     {label:'Ospite',    color:'#64748b', icon:'person_outline'},
+        'admin':     {label:'Admin',     color:'#dc2626', icon:'admin_panel_settings'},
+    };
+
+    let html = '';
+    sessions.forEach(d => {
+        const name    = d.name || d.operatorName || 'Utente';
+        const role    = d.role || 'guest';
+        const meta    = ROLE_META[role] || ROLE_META.guest;
+        const started = d.startedAt ? new Date(d.startedAt) : null;
+        const ended   = d.endedAt   ? new Date(d.endedAt)   : null;
+        const dur     = d.durationMin;
+        const device  = d.device || '';
+        const pages   = d.pagesViewed || [];
+        const isOnline = d.isOnline || (!d.endedAt && d.lastSeen && (Date.now()-new Date(d.lastSeen).getTime())<5*60*1000);
+
+        const startStr = started ? started.toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+        const durStr   = dur!=null ? dur+'m' : (isOnline ? '<span style="color:#16a34a;font-weight:900;animation:lblink 1s infinite alternate">● LIVE</span>' : '—');
+
+        let pagesHtml = '';
+        if(pages.length>0){
+            pagesHtml = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">'
+                + pages.map(p=>'<span style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:0.65rem;font-weight:600;color:var(--text-sec);">'+p+'</span>').join('')
+                + '</div>';
+        }
+
+        html += '<div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px;">'
+            + '<div style="display:flex;align-items:center;gap:10px;">'
+            + '<div style="width:34px;height:34px;border-radius:10px;background:'+meta.color+'20;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
+            + '<span class="material-icons-round" style="font-size:18px;color:'+meta.color+'">'+meta.icon+'</span></div>'
+            + '<div style="flex:1;min-width:0;">'
+            + '<div style="font-weight:800;font-size:0.9rem;color:var(--text-main);">'+name
+            + '<span style="background:'+meta.color+'18;color:'+meta.color+';font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:7px;">'+meta.label+'</span>'
+            + (isOnline?'<span style="background:#dcfce7;color:#15803d;font-size:0.6rem;font-weight:900;padding:2px 8px;border-radius:8px;margin-left:5px;">● Online</span>':'')
+            + '</div>'
+            + '<div style="font-size:0.72rem;color:var(--text-sec);margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;">'
+            + '<span>🕐 '+startStr+'</span>'
+            + '<span>⏱ '+durStr+'</span>'
+            + (device?'<span>📱 '+device+'</span>':'')
+            + '</div>'
+            + '</div></div>'
+            + pagesHtml
+            + '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// Esporta CSV
+function exportAccessLog(){
+    if(!_accessLogCache.length){ showToast('Nessun dato da esportare','error'); return; }
+    const rows = [['Nome','Ruolo','Inizio','Fine','Durata (min)','Dispositivo','Pagine viste']];
+    _accessLogCache.forEach(d => {
+        rows.push([
+            d.name||d.operatorName||'Utente',
+            d.role||'guest',
+            d.startedAt||'',
+            d.endedAt||'',
+            d.durationMin||'',
+            d.device||'',
+            (d.pagesViewed||[]).join(' | ')
+        ]);
+    });
+    const csv = rows.map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='accessi_as26_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('✓ CSV esportato','success');
+}
+
+// Aggiorna automaticamente gli utenti online ogni 30s
+setInterval(function(){
+    const sec = document.getElementById('acc-monitoring');
+    if(sec && sec.classList.contains('open')) loadOnlineUsers();
+}, 30000);
+function toggleSub(id){document.getElementById(id).classList.toggle('open');}
+
+// ── LOAD ──
+function loadFromFirebase(){showToast('⏳ Caricamento...');CONFIG_DOC.get().then(doc=>{applyConfigToUI(doc.exists?doc.data():{});setSaveStatus('saved','Online');showToast('✓ Configurazione caricata','success');}).catch(e=>{setSaveStatus('error','Errore');showToast('⚠️ Errore Firebase','error');applyConfigToUI({});});}
+
+// ── APPLY CONFIG ──
+function applyConfigToUI(cfg){
+  ['repbar','timetag','dog','vehicle','dots','changelog','repnotif','infbtn','dinner'].forEach(t=>{const el=document.getElementById('tog-'+t);if(el)el.checked=cfg['tog_'+t]!==false;});
+  renderDriverList(cfg.drivers||DEFAULT_DRIVERS);
+  const sc=cfg.shiftColors||{};
+  setV('c-M-bg',sc['M-bg']||'#026bfe');setV('c-M-text',sc['M-text']||'#ffffff');setV('c-M-border',sc['M-border']||'#bae6fd');
+  setV('c-P-bg',sc['P-bg']||'#56a2ff');setV('c-P-text',sc['P-text']||'#ffffff');setV('c-P-border',sc['P-border']||'#c7d2fe');
+  setV('c-N-bg',sc['N-bg']||'#003785');setV('c-N-text',sc['N-text']||'#ffffff');setV('c-N-border',sc['N-border']||'#c7d2fe');
+  setV('c-SM-bg',sc['SM-bg']||'#10004f');setV('c-SM-text',sc['SM-text']||'#ffffff');setV('c-SM-border',sc['SM-border']||'#cbd5e1');
+  setV('c-R-bg',sc['R-bg']||'#ecfdf5');setV('c-R-text',sc['R-text']||'#059669');setV('c-R-border',sc['R-border']||'#6ee7b7');
+  setV('c-rep-sub',sc['rep-sub']||'#dc2626');setV('c-rep-cover',sc['rep-cover']||'#ca8a04');setV('c-rep-own',sc['rep-own']||'#16a34a');
+  const sp=cfg.specialColors||{};
+  setV('c-ferie-bg',sp['ferie-bg']||'#ff782f');setV('c-ferie-text',sp['ferie-text']||'#ffffff');
+  setV('c-perm-bg',sp['perm-bg']||'#00e749');setV('c-perm-text',sp['perm-text']||'#000000');
+  setV('c-cong-bg',sp['cong-bg']||'#ffea00');setV('c-cong-text',sp['cong-text']||'#000000');
+  setV('c-rec-bg',sp['rec-bg']||'#d00173');setV('c-rec-text',sp['rec-text']||'#ffe8f2');
+  const sch=cfg.schedules||{};
+  setV('sched-M',sch.M||'6:30-13:15');setV('sched-P',sch.P||'12:45-20:10');
+  setV('sched-N',sch.N||'19:45-00:00');setV('sched-SM',sch.SM||'00:00-7:20');
+  setV('sched-mD',sch.mD||'6:30-13:42');setV('sched-pD',sch.pD||'13:15-20:27');
+  renderHolidayList(cfg.holidays||DEFAULT_HOLIDAYS);
+  const gen=cfg.general||{};
+  setV('cfg-year',gen.year||'2026');setV('cfg-title',gen.title||'A.S. 26');
+  setV('cfg-subtitle',gen.subtitle||'San Marino');
+  setV('cfg-cellh',gen.cellH||'60');setV('cfg-colw',gen.colW||'110');
+  setV('cfg-datecol-w',gen.dateColW||'60');setV('cfg-repbarh',gen.repBarH||'32');
+  setV('cfg-radius',gen.radius||'10');
+  setV('cfg-font-cell',gen.fontCell||'13');setV('cfg-font-time',gen.fontTime||'11');
+  setV('cfg-font-spec',gen.fontSpec||'10');setV('cfg-font-weight',gen.fontWeight||'800');
+  if(document.getElementById('cfg-uppercase'))document.getElementById('cfg-uppercase').checked=gen.uppercase!==false;
+  setV('cfg-primary',gen.primary||'#2563eb');setV('cfg-filename',gen.filename||'turni.xlsx');
+  setV('cfg-inf-url',gen.infUrl||'https://centrale118rsm-code.github.io/Turni-Infermieri-2026/');
+  setV('cfg-month-bg-start',gen.monthBgStart||'#1e3a8a');setV('cfg-month-bg-end',gen.monthBgEnd||'#3b82f6');
+  setV('cfg-app-bg',gen.appBg||'#f8fafc');setV('cfg-card-bg',gen.cardBg||'#ffffff');
+  setV('cfg-border-color',gen.borderColor||'#e2e8f0');
+  const rep=cfg.repText||{};
+  setV('cfg-rep-time-size',rep.timeSize||'9');setV('cfg-rep-time-color',rep.timeColor||'#ffffff');
+  setV('cfg-rep-name-size',rep.nameSize||'7');setV('cfg-rep-name-color',rep.nameColor||'#ffffff');
+  setV('cfg-rep-font-weight',rep.fontWeight||'900');
+  const dc=cfg.dateCol||{};
+  setV('cfg-date-fontsize',dc.fontSize||'17');setV('cfg-date-daysize',dc.daySize||'11');
+  setV('cfg-date-weight',dc.weight||'800');setV('cfg-date-bg',dc.bg||'#f8fafc');
+  setV('cfg-date-text',dc.text||'#0f172a');setV('cfg-date-red-bg',dc.redBg||'#fef2f2');
+  setV('cfg-date-red-text',dc.redText||'#dc2626');setV('cfg-date-border',dc.border||'#e2e8f0');
+  setV('cfg-today-bg',dc.todayBg||'#fff7ed');setV('cfg-today-border',dc.todayBorder||'#f97316');
+  setV('cfg-holiday-orient',dc.holidayOrient||'vertical');
+  setV('cfg-holiday-color',dc.holidayColor||'#dc2626');setV('cfg-holiday-fontsize',dc.holidayFontSize||'7');
+  if(document.getElementById('cfg-show-dayname'))document.getElementById('cfg-show-dayname').checked=dc.showDayName!==false;
+  if(document.getElementById('cfg-show-weekend-label'))document.getElementById('cfg-show-weekend-label').checked=dc.showWeekendLabel!==false;
+  // sync uniforma
+  setV('unif-h',gen.cellH||'60');setV('unif-w',gen.colW||'110');
+  ['M','P','N','SM','R'].forEach(previewShift);
+  ['ferie','perm','cong','rec'].forEach(previewSpecial);
+}
+
+function setV(id,val){const el=document.getElementById(id);if(el)el.value=val;}
+function gv(id){const el=document.getElementById(id);return el?el.value:'';}
+function gb(id){const el=document.getElementById(id);return el?el.checked:true;}
+
+// ── COLLECT CONFIG ──
+function collectConfig(){
+  const togObj={};
+  ['repbar','timetag','dog','vehicle','dots','changelog','repnotif','infbtn','dinner'].forEach(t=>{togObj['tog_'+t]=gb('tog-'+t);});
+  return{
+    ...togObj,
+    drivers:getDrivers(),
+    shiftColors:{'M-bg':gv('c-M-bg'),'M-text':gv('c-M-text'),'M-border':gv('c-M-border'),'P-bg':gv('c-P-bg'),'P-text':gv('c-P-text'),'P-border':gv('c-P-border'),'N-bg':gv('c-N-bg'),'N-text':gv('c-N-text'),'N-border':gv('c-N-border'),'SM-bg':gv('c-SM-bg'),'SM-text':gv('c-SM-text'),'SM-border':gv('c-SM-border'),'R-bg':gv('c-R-bg'),'R-text':gv('c-R-text'),'R-border':gv('c-R-border'),'rep-sub':gv('c-rep-sub'),'rep-cover':gv('c-rep-cover'),'rep-own':gv('c-rep-own')},
+    specialColors:{'ferie-bg':gv('c-ferie-bg'),'ferie-text':gv('c-ferie-text'),'perm-bg':gv('c-perm-bg'),'perm-text':gv('c-perm-text'),'cong-bg':gv('c-cong-bg'),'cong-text':gv('c-cong-text'),'rec-bg':gv('c-rec-bg'),'rec-text':gv('c-rec-text')},
+    schedules:{M:gv('sched-M'),P:gv('sched-P'),N:gv('sched-N'),SM:gv('sched-SM'),mD:gv('sched-mD'),pD:gv('sched-pD')},
+    holidays:getHolidays(),
+    repText:{timeSize:gv('cfg-rep-time-size'),timeColor:gv('cfg-rep-time-color'),nameSize:gv('cfg-rep-name-size'),nameColor:gv('cfg-rep-name-color'),fontWeight:gv('cfg-rep-font-weight')},
+    dateCol:{fontSize:gv('cfg-date-fontsize'),daySize:gv('cfg-date-daysize'),weight:gv('cfg-date-weight'),bg:gv('cfg-date-bg'),text:gv('cfg-date-text'),redBg:gv('cfg-date-red-bg'),redText:gv('cfg-date-red-text'),border:gv('cfg-date-border'),todayBg:gv('cfg-today-bg'),todayBorder:gv('cfg-today-border'),holidayOrient:gv('cfg-holiday-orient'),holidayColor:gv('cfg-holiday-color'),holidayFontSize:gv('cfg-holiday-fontsize'),showDayName:gb('cfg-show-dayname'),showWeekendLabel:gb('cfg-show-weekend-label')},
+    general:{year:gv('cfg-year'),title:gv('cfg-title'),subtitle:gv('cfg-subtitle'),cellH:gv('cfg-cellh'),colW:gv('cfg-colw'),dateColW:gv('cfg-datecol-w'),repBarH:gv('cfg-repbarh'),radius:gv('cfg-radius'),fontCell:gv('cfg-font-cell'),fontTime:gv('cfg-font-time'),fontSpec:gv('cfg-font-spec'),fontWeight:gv('cfg-font-weight'),uppercase:gb('cfg-uppercase'),primary:gv('cfg-primary'),filename:gv('cfg-filename'),infUrl:gv('cfg-inf-url'),monthBgStart:gv('cfg-month-bg-start'),monthBgEnd:gv('cfg-month-bg-end'),appBg:gv('cfg-app-bg'),cardBg:gv('cfg-card-bg'),borderColor:gv('cfg-border-color')},
+    _updatedAt:new Date().toISOString(),_updatedBy:'Admin'
+  };
+}
+
+// ── UNIFORMA ──
+function applyUniform(){
+  const h=gv('unif-h'),w=gv('unif-w');
+  if(!h||!w){showToast('Inserisci altezza e larghezza','error');return;}
+  setV('cfg-cellh',h);setV('cfg-colw',w);
+  schedSave();
+  showToast(`✓ Celle uniformate: ${h}px × ${w}px — in aggiornamento su tutti i dispositivi`,'success');
+}
+
+// ── DRIVER LIST ──
+function renderDriverList(drivers){const list=document.getElementById('driver-list');list.innerHTML='';drivers.forEach((name,i)=>{const row=document.createElement('div');row.className='driver-item';row.innerHTML=`<span class="driver-num">${i+1}</span><input type="text" class="driver-name-input" value="${name}" placeholder="Nome autista" oninput="schedSave()"><button class="btn-icon danger" onclick="removeDriver(this)"><span class="material-icons-round">close</span></button>`;list.appendChild(row);});}
+function addDriver(){const list=document.getElementById('driver-list');const i=list.children.length+1;const row=document.createElement('div');row.className='driver-item';row.innerHTML=`<span class="driver-num">${i}</span><input type="text" class="driver-name-input" value="" placeholder="Nome autista" oninput="schedSave()"><button class="btn-icon danger" onclick="removeDriver(this)"><span class="material-icons-round">close</span></button>`;list.appendChild(row);row.querySelector('input').focus();schedSave();}
+function removeDriver(btn){if(!confirm('Rimuovere questo autista?'))return;btn.parentElement.remove();document.querySelectorAll('.driver-item').forEach((el,i)=>{el.querySelector('.driver-num').textContent=i+1;});schedSave();}
+function getDrivers(){return[...document.querySelectorAll('.driver-name-input')].map(i=>i.value.trim()).filter(Boolean);}
+
+// ── HOLIDAY LIST ──
+function renderHolidayList(holidays){const list=document.getElementById('holiday-list');list.innerHTML='';holidays.forEach(h=>{const[m,d]=h.key.split('-');const row=document.createElement('div');row.className='holiday-item';row.innerHTML=`<input type="text" class="holiday-date-input" value="${parseInt(m)+1}/${d}" placeholder="MM/GG" oninput="schedSave()"><input type="text" class="holiday-name-input" value="${h.name}" placeholder="Nome festività" oninput="schedSave()"><button class="btn-icon danger" onclick="this.parentElement.remove();schedSave()"><span class="material-icons-round">close</span></button>`;list.appendChild(row);});}
+function addHoliday(){const list=document.getElementById('holiday-list');const row=document.createElement('div');row.className='holiday-item';row.innerHTML=`<input type="text" class="holiday-date-input" value="" placeholder="MM/GG" oninput="schedSave()"><input type="text" class="holiday-name-input" value="" placeholder="Nome festività" oninput="schedSave()"><button class="btn-icon danger" onclick="this.parentElement.remove();schedSave()"><span class="material-icons-round">close</span></button>`;list.appendChild(row);row.querySelector('input').focus();schedSave();}
+function getHolidays(){const rows=document.querySelectorAll('.holiday-item');const result=[];rows.forEach(row=>{const dateStr=row.querySelector('.holiday-date-input').value.trim();const name=row.querySelector('.holiday-name-input').value.trim();if(!dateStr||!name)return;const parts=dateStr.split('/');if(parts.length!==2)return;const m=parseInt(parts[0])-1,d=parseInt(parts[1]);if(isNaN(m)||isNaN(d))return;result.push({key:`${m}-${d}`,name});});return result;}
+
+// ── PREVIEWS ──
+function previewShift(type){const bg=document.getElementById(`c-${type}-bg`)?.value,text=document.getElementById(`c-${type}-text`)?.value,border=document.getElementById(`c-${type}-border`)?.value||'transparent';const hdr=document.getElementById(`prev-${type}-hdr`);if(hdr&&bg&&text){hdr.style.background=bg;hdr.style.color=text;}const card=document.getElementById(`prev-${type}`);if(card&&bg&&text){card.style.background=bg;card.style.color=text;if(border)card.style.borderColor=border;}}
+function previewSpecial(type){const bg=document.getElementById(`c-${type}-bg`)?.value,text=document.getElementById(`c-${type}-text`)?.value,el=document.getElementById(`prev-${type}`);if(el&&bg&&text){el.style.background=bg;el.style.color=text;}}
+
+// ── JSON ──
+function generateJson(){const cfg=collectConfig();const ta=document.getElementById('json-export');ta.value=JSON.stringify(cfg,null,2);ta.style.display='block';showToast('✓ JSON generato');}
+function copyJson(){generateJson();const ta=document.getElementById('json-export');if(!ta.value)return;navigator.clipboard.writeText(ta.value).then(()=>showToast('✓ Copiato negli appunti','success'));}
+
+// ── GENERA CSS BLOCCO ──
+function buildBakedCSS(cfg){
+  const sc=cfg.shiftColors||{},sp=cfg.specialColors||{},gen=cfg.general||{},dc=cfg.dateCol||{},rep=cfg.repText||{};
+  return `<style id="admin-baked-css">
+/* ═══ CONFIG BAKED-IN DALL'ADMIN — ${new Date().toLocaleString('it-IT')} ═══ */
+:root {
+  --primary: ${gen.primary||'#2563eb'};
+  --bg: ${gen.appBg||'#f8fafc'};
+  --bg-card: ${gen.cardBg||'#ffffff'};
+  --border: ${gen.borderColor||'#e2e8f0'};
+  --cell-h: ${gen.cellH||'60'}px;
+  --font-base: ${gen.fontCell||'13'}px;
+  --font-small: ${gen.fontTime||'11'}px;
+  --c-M: ${sc['M-bg']||'#026bfe'}; --t-M: ${sc['M-text']||'#ffffff'}; --b-M: ${sc['M-border']||'#bae6fd'};
+  --c-P: ${sc['P-bg']||'#56a2ff'}; --t-P: ${sc['P-text']||'#ffffff'}; --b-P: ${sc['P-border']||'#c7d2fe'};
+  --c-N: ${sc['N-bg']||'#003785'}; --t-N: ${sc['N-text']||'#ffffff'}; --b-N: ${sc['N-border']||'#c7d2fe'};
+  --c-SM: ${sc['SM-bg']||'#10004f'}; --t-SM: ${sc['SM-text']||'#ffffff'}; --b-SM: ${sc['SM-border']||'#cbd5e1'};
+  --c-R: ${sc['R-bg']||'#ecfdf5'}; --t-R: ${sc['R-text']||'#059669'}; --b-R: ${sc['R-border']||'#6ee7b7'};
+  --bg-ferie: ${sp['ferie-bg']||'#ff782ff6'}; --t-ferie: ${sp['ferie-text']||'#ffffff'};
+  --bg-perm: ${sp['perm-bg']||'#00e749'}; --t-perm: ${sp['perm-text']||'#000000'};
+  --bg-cong: ${sp['cong-bg']||'#ffea00'}; --t-cong: ${sp['cong-text']||'#000000'};
+  --bg-rec: ${sp['rec-bg']||'#d00173'}; --t-rec: ${sp['rec-text']||'#ffe8f2'};
+  --month-bar-bg: linear-gradient(135deg, ${gen.monthBgStart||'#1e3a8a'} 0%, ${gen.monthBgEnd||'#3b82f6'} 100%);
+  --header-h: 100px;
+  --th-h: 40px;
+}
+/* Forza dimensioni uniformi su tutte le celle */
+thead th { width: ${gen.colW||'110'}px !important; min-width: ${gen.colW||'110'}px !important; max-width: ${gen.colW||'110'}px !important; height: var(--th-h) !important; }
+thead th:first-child { width: ${gen.dateColW||'60'}px !important; min-width: ${gen.dateColW||'60'}px !important; max-width: ${gen.dateColW||'60'}px !important; }
+tbody td { width: ${gen.colW||'110'}px !important; min-width: ${gen.colW||'110'}px !important; max-width: ${gen.colW||'110'}px !important; height: ${gen.cellH||'60'}px !important; min-height: ${gen.cellH||'60'}px !important; max-height: ${gen.cellH||'60'}px !important; overflow: hidden !important; }
+tbody td.td-date { width: ${gen.dateColW||'60'}px !important; min-width: ${gen.dateColW||'60'}px !important; max-width: ${gen.dateColW||'60'}px !important; }
+/* Tipografia celle */
+.cell { border-radius: ${gen.radius||'10'}px !important; font-size: ${gen.fontCell||'13'}px !important; font-weight: ${gen.fontWeight||'800'} !important; ${gen.uppercase!==false?'text-transform:uppercase!important;':'text-transform:none!important;'} }
+.time-tag { font-size: ${gen.fontTime||'11'}px !important; }
+.spec-orange,.spec-green,.spec-yellow,.spec-pink,.spec-blue,.spec-red,.spec-nl,.spec-purple { font-size: ${gen.fontSpec||'10'}px !important; }
+/* Barra reperibilità */
+.rep-bar { height: ${gen.repBarH||'32'}px !important; }
+.rep-bar-seg { font-weight: ${rep.fontWeight||'900'} !important; }
+.rep-bar-seg .rep-time { font-size: ${rep.timeSize||'9'}px !important; color: ${rep.timeColor||'#ffffff'} !important; }
+.rep-bar-seg .rep-name { font-size: ${rep.nameSize||'7'}px !important; color: ${rep.nameColor||'#ffffff'} !important; }
+.rep-bar-seg.rep-sub { background: ${sc['rep-sub']||'#dc2626'} !important; }
+.rep-bar-seg.rep-cover { background: ${sc['rep-cover']||'#ca8a04'} !important; }
+.rep-bar-seg.green { background: ${sc['rep-own']||'#16a34a'} !important; }
+/* Colonna data */
+tbody td.td-date { background: ${dc.bg||'#f8fafc'} !important; color: ${dc.text||'#0f172a'} !important; font-size: ${dc.fontSize||'17'}px !important; font-weight: ${dc.weight||'800'} !important; border-right: 2px solid ${dc.border||'#e2e8f0'} !important; border-bottom: none !important; }
+.td-date small { font-size: ${dc.daySize||'11'}px !important; ${dc.showDayName===false?'display:none!important;':''} }
+.td-date.date-red { color: ${dc.redText||'#dc2626'} !important; background: ${dc.redBg||'#fef2f2'} !important; border-right-color: ${dc.redText||'#dc2626'} !important; }
+.holiday-name { font-size: ${dc.holidayFontSize||'7'}px !important; color: ${dc.holidayColor||'#dc2626'} !important; ${dc.holidayOrient==='horizontal'?'writing-mode:horizontal-tb!important;transform:none!important;max-height:none!important;':''}${dc.holidayOrient==='hidden'?'display:none!important;':''} }
+${dc.showWeekendLabel===false?'.holiday-name[style*="SABATO"],.holiday-name[style*="DOMENICA"]{display:none!important}':''}
+/* Oggi */
+tr.today td { background: ${dc.todayBg||'#fff7ed'} !important; border-bottom: 2px solid ${dc.todayBorder||'#f97316'} !important; }
+tr.today .td-date { border-left: 6px solid ${dc.todayBorder||'#f97316'} !important; background: ${dc.todayBg||'#fff7ed'} !important; border-right-color: ${dc.todayBorder||'#f97316'} !important; }
+/* Visibilità toggle */
+${!cfg.tog_repbar?'.rep-bar{display:none!important}':''}
+${!cfg.tog_timetag?'.time-tag{display:none!important}':''}
+${!cfg.tog_dog?'.dog-icon{display:none!important}':''}
+${!cfg.tog_dots?'.shift-dots{display:none!important}':''}
+</style>`;
+}
+
+function buildBakedScript(cfg){
+  const gen=cfg.general||{},sch=cfg.schedules||{};
+  const drivers=cfg.drivers||DEFAULT_DRIVERS;
+  const driverOpts=drivers.map(d=>`<option value="${d}">${d}</option>`).join('');
+  return `<script id="admin-config-baked">
+// ═══ CONFIG BAKED-IN DALL'ADMIN (${new Date().toLocaleString('it-IT')}) ═══
+window._BAKED_CFG = ${JSON.stringify(cfg)};
+(function(){
+  // Applica subito via CSS vars
+  const r = document.documentElement;
+  const sc = window._BAKED_CFG.shiftColors||{};
+  const sp = window._BAKED_CFG.specialColors||{};
+  const gen = window._BAKED_CFG.general||{};
+  const dc = window._BAKED_CFG.dateCol||{};
+  const rep = window._BAKED_CFG.repText||{};
+  if(gen.primary) r.style.setProperty('--primary', gen.primary);
+  if(gen.cellH) r.style.setProperty('--cell-h', gen.cellH+'px');
+  if(gen.fontCell) r.style.setProperty('--font-base', gen.fontCell+'px');
+  if(gen.fontTime) r.style.setProperty('--font-small', gen.fontTime+'px');
+})();
+document.addEventListener('DOMContentLoaded', function(){
+  // Aggiorna titolo
+  const gen = window._BAKED_CFG.general||{};
+  if(gen.title){const lt=document.querySelector('.logo-title');if(lt)lt.textContent=gen.title;}
+  if(gen.subtitle){const ls=document.getElementById('last-update-badge');if(ls)ls.textContent=gen.subtitle;}
+  // Aggiorna select autisti
+  const sel=document.getElementById('turni-user-select');
+  if(sel){sel.innerHTML='<option value="">-- Nessuna selezione --</option>${driverOpts}';}
+  // Aggiorna HOLIDAYS
+  const newHol={};
+  (window._BAKED_CFG.holidays||[]).forEach(function(h){if(h.key&&h.name)newHol[h.key]=h.name;});
+  try{if(typeof HOLIDAYS!=='undefined')HOLIDAYS=newHol;}catch(e){}
+  // Aggiorna SCHEDULE
+  const sch=window._BAKED_CFG.schedules||{};
+  try{
+    if(typeof SCHEDULE!=='undefined'){
+      if(sch.M){SCHEDULE['M']=sch.M;SCHEDULE['MAT']=sch.M;SCHEDULE['MATTINA']=sch.M;}
+      if(sch.P){SCHEDULE['P']=sch.P;SCHEDULE['POM']=sch.P;SCHEDULE['POMERIGGIO']=sch.P;}
+      if(sch.N){SCHEDULE['N']=sch.N;SCHEDULE['NOTT']=sch.N;SCHEDULE['NOTTE']=sch.N;}
+      if(sch.SM){SCHEDULE['SM']=sch.SM;SCHEDULE['SMONTO']=sch.SM;SCHEDULE['S']=sch.SM;}
+    }
+  }catch(e){}
+  // Chiama applyAdminConfig se disponibile (override Firebase con i valori baked)
+  if(typeof applyAdminConfig==='function'){
+    setTimeout(function(){applyAdminConfig(window._BAKED_CFG);},200);
+  }
+  // Visibilità toggle
+  const tog=function(key){return window._BAKED_CFG['tog_'+key]!==false;};
+  const applyCSS=function(id,sel,show){
+    let s=document.getElementById(id);
+    if(!show){if(!s){s=document.createElement('style');s.id=id;document.head.appendChild(s);}s.textContent=sel+'{display:none!important}';}
+    else if(s)s.remove();
+  };
+  applyCSS('baked-repbar','.rep-bar',tog('repbar'));
+  applyCSS('baked-timetag','.time-tag',tog('timetag'));
+  applyCSS('baked-dog','.dog-icon',tog('dog'));
+  applyCSS('baked-dots','.shift-dots',tog('dots'));
+  const infBtn=document.querySelector('.btn-inf');
+  if(infBtn)infBtn.style.display=tog('infbtn')?'':'none';
+  const dinnerItem=document.querySelector('.menu-item[onclick="openDinnerModal()"]');
+  if(dinnerItem)dinnerItem.style.display=tog('dinner')?'':'none';
+  // URL infermieri
+  if(gen.infUrl)window._infUrl=gen.infUrl;
+});
+<\/script>`;
+}
+
+// ── GENERA INDEX.HTML ──
+function generateIndexHtml(){
+  const src=document.getElementById('html-paste').value.trim();
+  if(!src||src.length<100){showToast('❌ Incolla prima il contenuto di turni.html!','error');return;}
+  const cfg=collectConfig();
+  const cssBlock=buildBakedCSS(cfg);
+  const scriptBlock=buildBakedScript(cfg);
+
+  let out=src;
+
+  // Rimuovi eventuale blocco admin-baked-css già presente
+  out=out.replace(/<style id="admin-baked-css">[\s\S]*?<\/style>/,'');
+  // Rimuovi eventuale blocco admin-config-baked già presente
+  out=out.replace(/<script id="admin-config-baked">[\s\S]*?<\/script>/,'');
+
+  // Inserisci il CSS subito dopo </title>
+  if(out.includes('</title>')){
+    out=out.replace('</title>','</title>\n'+cssBlock);
+  } else {
+    out=out.replace('<head>','<head>\n'+cssBlock);
+  }
+
+  // Inserisci lo script subito prima di </body>
+  if(out.includes('</body>')){
+    out=out.replace('</body>',scriptBlock+'\n</body>');
+  } else {
+    out=out+'\n'+scriptBlock;
+  }
+
+  // Download come index.html
+  const blob=new Blob([out],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='index.html';
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
+  showToast('✅ index.html generato e scaricato!','success');
+}
+
+// ── DANGER ──
+function clearNotifications(){if(!confirm('Eliminare tutte le notifiche?'))return;localStorage.removeItem('notifications_history');showToast('✓ Notifiche eliminate','success');}
+function resetChangelog(){if(!confirm('Resettare il popup changelog?'))return;localStorage.removeItem('changelog_seen_version');showToast('✓ Changelog resettato','success');}
+function clearAllStorage(){if(!confirm('⚠️ Eliminare TUTTI i dati locali del browser?'))return;if(!confirm('Ultima conferma: sicuro?'))return;localStorage.clear();showToast('✓ localStorage svuotato');}
+
+// ── TOAST ──
+let toastTimer=null;
+function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className=(type?type:'');t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3500);}
+
+// ── INIT ──
+window.addEventListener('load',()=>{document.getElementById('pwd-input').focus();setSaveStatus('','Firebase');});
+</script>
+</body>
+</html>
