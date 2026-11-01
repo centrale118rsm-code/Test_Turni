@@ -3897,7 +3897,7 @@
             </div>
         </div>
     </div>
-    <div id="year-banner" onclick="switchToYear(activeYear)" role="button">
+    <div id="year-banner" onclick="gtYearBannerClick()" role="button">
         <span class="material-icons-round">history</span>
         <span id="year-banner-text"></span>
         <span class="material-icons-round">chevron_right</span>
@@ -4018,7 +4018,7 @@
     const DIURNI6_FROM = '2026-10-05';
     let fmtDateCtx = null;   // giorno della riga che si sta disegnando (per gli orari dei diurnisti)
     // AREA TEST: mentre si guardano i turni generati valgono gli orari del modello scelto (6 h o 7 h 12)
-    function gtViewModel() { return (window.GT && GT.yearModel && isViewingArchive() && GT.yearModel[SHIFT_YEAR]) || null; }
+    function gtViewModel() { return (window.GT && GT.yearModel && GT.yearModel[SHIFT_YEAR]) || null; }
     function gtYears() { return (window.GT && GT.calYears) || []; }
     function diurniSched(code, when) {
         code = String(code || '').toLowerCase();
@@ -4514,6 +4514,8 @@
             const data = doc.data();
             if(data.dataSource !== undefined) dataSourceMode = data.dataSource === 'firebase' ? 'firebase' : 'excel';
             if(data.activeYear !== undefined && data.activeYear) activeYear = +data.activeYear;
+            realActiveYear = activeYear;
+            if(GT_WORK_YEAR && dataSourceMode === 'firebase' && GT_WORK_YEAR > realActiveYear) activeYear = GT_WORK_YEAR;
             if(data.archivedYears !== undefined) archivedYears = (data.archivedYears || []).map(Number);
             // è stato attivato il passaggio a Firebase mentre questa app girava ancora sull'Excel
             if(appBooted && bootMode === 'excel' && dataSourceMode === 'firebase' && !sessionStorage.getItem('fb_mode_reloaded')) {
@@ -5649,7 +5651,7 @@
     }
     function menuTree() {
         const dark = document.body.classList.contains('dark-mode');
-        const hasYears = typeof dataSourceMode !== 'undefined' && ((dataSourceMode === 'firebase' && archivedYears.length > 0) || gtYears().length > 0);
+        const hasYears = typeof dataSourceMode !== 'undefined' && ((dataSourceMode === 'firebase' && archivedYears.length > 0) || gtYears().length > 0 || activeYear !== realActiveYear);
         return [
             { group:'Per te' },
             { id:'me', icon:'person', label:'La mia pagina', desc: (userIdentity && userIdentity !== 'Ospite') ? 'Prossimi turni, ore, assenze, reperibilit\u00e0' : 'Scegli prima chi sei', color:'#1d4ed8', run: () => openMyPage() },
@@ -5661,7 +5663,7 @@
                 { id:'filter', icon:'groups', label:'Filtra operatori', desc:'Mostra solo alcuni colleghi', color: MN_COLORS.cal, run: () => toggleDriverFilterDropdown() },
                 { id:'print', icon:'print', label:'Stampa del mese', desc:'PDF dei turni per la bacheca', color: MN_COLORS.cal, run: () => printMonthPick() },
             ] },
-            { id:'years', icon:'date_range', label:`Anno ${SHIFT_YEAR}${SHIFT_YEAR !== activeYear ? ' (sola lettura)' : ''}`, desc: hasYears ? 'Cambia anno: ' + [activeYear].concat(archivedYears, gtYears()).filter((y, i, a) => a.indexOf(y) === i).sort().join(', ') : 'Per ora c\u2019è solo il ' + activeYear, color: MN_COLORS.cal, run: () => openYearPicker() },
+            { id:'years', icon:'date_range', label:`Anno ${SHIFT_YEAR}${isViewingArchive() ? ' (sola lettura)' : ''}`, desc: hasYears ? 'Cambia anno: ' + [realActiveYear, activeYear].concat(archivedYears, gtYears()).filter((y, i, a) => a.indexOf(y) === i).sort().join(', ') : 'Per ora c\u2019è solo il ' + realActiveYear, color: MN_COLORS.cal, run: () => openYearPicker() },
             { id:'view', icon: calOverview ? 'view_agenda' : 'grid_view', label: calOverview ? 'Vista dettagliata' : 'Vista d’insieme', desc: calOverview ? 'Torna al calendario giorno per giorno' : 'Tutto l’anno a colpo d’occhio', color: MN_COLORS.cal, run: () => toggleCalView() },
             { id:'ferie', icon:'beach_access', label:'Ferie e permessi', desc:'Quando prenderli: giorni e periodi consigliati', color:'#16a34a', run: () => openFerieAdvice() },
             { id:'ore', icon:'query_stats', label:'Conteggio orario', desc:'Ore lavorate e saldo rispetto al contratto', color: MN_COLORS.ore, run: () => openHoursModal() },
@@ -11217,6 +11219,10 @@
     // impostazioni); 'firebase' = i turni vivono solo su Firestore, un documento per mese
     // ("turni_AAAA-MM", mappa cells) e l'Excel non viene più letto.
     let dataSourceMode = 'excel', activeYear = 2026, archivedYears = [];
+    // AREA TEST: anno su cui si lavora (scelto da menu › Anno). L'anno "vero" resta realActiveYear;
+    // scegliendo il 2027 generato l'app riparte su quell'anno, modificabile come il 2026.
+    let realActiveYear = 2026;
+    const GT_WORK_YEAR = (() => { try { return +localStorage.getItem('gt_work_year') || 0; } catch(e) { return 0; } })();
     let bootMode = null, appBooted = false;
     let configReadyResolve = null, configReadyDone = false;
     const configReady = new Promise(r => { configReadyResolve = r; });
@@ -11584,7 +11590,7 @@
 
     // ── Turni solo su Firebase: calendario generato e un documento per mese ──
     // Mesi dell'anno dopo mostrati dopo dicembre (ferie dell'anno godute a gennaio, programmazione).
-    const NEXT_YEAR_MONTHS = 12;   // tutto l'anno dopo, man mano si riempie
+    const NEXT_YEAR_MONTHS = 1;   // AREA TEST: come nell'Excel, dopo dicembre solo gennaio; l'anno dopo si apre da menu › Anno
     const CO_CARRY_MONTHS = 3;     // le ferie (C.O.) messe entro marzo dell'anno dopo sono dell'anno in corso
     function buildBlankYearData(year, baseNames, extraMonths) {
         const header = ['MESE', 'GIORNO', 'NOME'].concat(baseNames);
@@ -11814,10 +11820,11 @@
         if(item) item.style.display = ((dataSourceMode === 'firebase' && archivedYears.length) || gtYears().length) ? '' : 'none';
         const banner = document.getElementById('year-banner');
         if(banner) {
-            const on = isViewingArchive();
+            const work = !isViewingArchive() && activeYear !== realActiveYear;
+            const on = isViewingArchive() || work;
             banner.style.display = on ? 'flex' : 'none';
-            if(on) document.getElementById('year-banner-text').textContent = gtYears().includes(SHIFT_YEAR)
-                ? `Stai guardando il ${SHIFT_YEAR} generato (sola lettura) · tocca per tornare al ${activeYear}`
+            if(on) document.getElementById('year-banner-text').textContent = work
+                ? `Stai lavorando sul ${activeYear} · tocca per tornare al ${realActiveYear}`
                 : `Stai guardando il ${SHIFT_YEAR} (sola lettura) · tocca per tornare al ${activeYear}`;
             document.documentElement.style.setProperty('--header-h', on ? 'calc(var(--header-base-h) + var(--safe-top) + 34px)' : 'calc(var(--header-base-h) + var(--safe-top))');
         }
@@ -11831,12 +11838,31 @@
     }
     async function openYearPicker() {
         const m = document.getElementById('menu-dropdown'); if(m && m.style.display === 'flex') toggleMenu();
-        const shown = SHIFT_YEAR;
-        const gy = gtYears().filter(y => y !== activeYear);
-        const years = [activeYear].concat(archivedYears, gy).filter((y, i, a) => a.indexOf(y) === i).sort((a, b) => a - b);
-        const choice = await ccDialog('Anni', 'Scegli l’anno da consultare. Gli anni diversi da quello attuale sono in sola lettura.',
-            years.map(y => ({ label: `${y}${y === activeYear ? ' · attuale' : ''}${gy.includes(y) ? ' · generato' : ''}${y === shown ? ' ✓' : ''}`, kind: y === activeYear ? 'primary' : '', value: String(y) })).concat([{ label:'Chiudi', kind:'ghost', value:null }]));
-        if(choice) switchToYear(choice);
+        const shown = SHIFT_YEAR, gy = gtYears();
+        const years = [realActiveYear, activeYear].concat(archivedYears, gy).filter((y, i, a) => a.indexOf(y) === i).sort((a, b) => a - b);
+        const choice = await ccDialog('Anno', 'Scegli l’anno su cui lavorare. Gli anni passati si aprono in sola lettura.',
+            years.map(y => ({ label: `${y}${y === realActiveYear ? ' · attuale' : ''}${gy.includes(y) && y !== realActiveYear ? ' · generato' : ''}${y === shown ? ' ✓' : ''}`, kind: y === shown ? 'primary' : '', value: String(y) })).concat([{ label:'Chiudi', kind:'ghost', value:null }]));
+        if(!choice) return;
+        const y = +choice;
+        if(y < realActiveYear) { switchToYear(y); return; }   // anni passati: sola lettura
+        if(isViewingArchive()) returnToActiveYear();
+        if(y !== activeYear) gtSetWorkYear(y);
+    }
+    function gtYearBannerClick() { if(isViewingArchive()) switchToYear(activeYear); else if(activeYear !== realActiveYear) gtSetWorkYear(realActiveYear); }
+    // Cambia l'anno su cui si lavora: l'app riparte su quell'anno (stesso meccanismo del capodanno).
+    async function gtSetWorkYear(y) {
+        if(coordEditModeActive) { const ok = await exitCoordEdit(true); if(!ok) return; }
+        try { if(y === realActiveYear) localStorage.removeItem('gt_work_year'); else localStorage.setItem('gt_work_year', String(y)); } catch(e) {}
+        if(y !== realActiveYear && dataSourceMode !== 'firebase') {
+            // l'app legge ancora turni.xlsx: prima i turni passano su Firebase (finto), come succede a capodanno
+            ccToast('Preparo il ' + y + '…');
+            try { sessionStorage.setItem('gt_rewrite', String(y)); } catch(e) {}
+            try { await cfgRef('settings').set({ updatedAt: new Date().toISOString() }, { merge:true }); } catch(e) {}   // il passaggio aggiorna questo documento: deve esistere
+            await ccMigrateToFirebase(true);
+            return;
+        }
+        ccToast(y === realActiveYear ? 'Torno al ' + y + '…' : 'Apro il ' + y + '…');
+        setTimeout(() => location.reload(), 300);
     }
 
     // ── Sezione "Dati e backup" dell'Area Coordinatore ─────────────────────
