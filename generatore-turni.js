@@ -54,7 +54,7 @@
     }
     var DEFAULT_OPTS = {
         model: '7h12', nights: 1, covM: 2, covP: 2, repGapDays: 4, maxFerie: 2,
-        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, mBeforeRest: true, blocks: true, repGap: true, eqFest: true, maxFerie: true }
+        rules: { eqOp: true, eqRep: true, model: true, weekendRest: true, mBeforeRest: true, blocks: true, repGap: true, eqFest: true, maxFerie: true, altMP: true }
     };
 
     /*
@@ -262,7 +262,11 @@
                 var needWork = Math.max(0, Math.min(free.length, Math.round((target - credits) / model.dayMin)));
                 // giorni prima della settimana lavorati di fila (per non superare 6)
                 var streak = 0; for (var k = 1; k <= 7; k++) { var v = vOf(addDays(ws, -k), id); if (WORK[v] && !isAbs(addDays(ws, -k), id)) streak++; else break; }
-                people.push({ id: id, free: free, restN: free.length - needWork, streak: streak, options: [], target: target, nd: nd });
+                // settimana intera da diurnista, senza assenze: riposi fissi del modello (6 h = 1, 7 h 12 = 2)
+                var pure = nd === 7 && free.length === 7;
+                // la settimana prima dell'ingresso in turno (P › M › N › S già scritti) può avere un riposo in più
+                var nx = addDays(ws, 7), entering = !!(G[nx] && role[nx] && role[nx][id] === 't');
+                people.push({ id: id, free: free, restN: pure ? model.rests : free.length - needWork, pure: pure, entering: entering, streak: streak, options: [], target: pure ? WEEK_MIN : target, nd: nd });
             });
             var needDay = wk.map(function (iso) {
                 if (!G[iso]) return { m: 0, p: 0 };
@@ -271,9 +275,10 @@
             var wkMean = mean(function (id) { return st[id].wkRest; }), festMean = mean(function (id) { return st[id].festWork; });
             people.forEach(function (pp) {
                 // un riposo in più o in meno si può (le ore si recuperano la settimana dopo), ma costa
-                [pp.restN, pp.restN + 1, pp.restN - 1, pp.restN + 2].forEach(function (k) {
+                // settimana intera: un riposo in più solo se serve a non fare più di 6 giorni di fila (es. l'ingresso in turno)
+                (pp.pure ? [pp.restN, pp.restN + 1] : [pp.restN, pp.restN + 1, pp.restN - 1, pp.restN + 2]).forEach(function (k) {
                     if (k < 0 || k > pp.free.length) return;
-                    combos(pp.free, k).forEach(function (set) { pp.options.push({ set: set, own: ownScore(pp, set) - 150 * Math.abs(k - pp.restN) }); });
+                    combos(pp.free, k).forEach(function (set) { var own = ownScore(pp, set); if (pp.pure && k > pp.restN && own > -300 && !pp.entering) return; pp.options.push({ set: set, own: own - (pp.pure ? 250 : 150) * Math.abs(k - pp.restN) }); });
                 });
                 if (!pp.options.length) pp.options.push({ set: [], own: 0 });
                 pp.pick = pp.options.reduce(function (a, b) { return b.own > a.own ? b : a; });
@@ -329,9 +334,10 @@
                 W.forEach(function (id) {
                     var s = 0, nv = vOf(addDays(iso, 1), id), pv = vOf(addDays(iso, -1), id), pAbs = isAbs(addDays(iso, -1), id);
                     var nextRest = REST[nv] || (G[addDays(iso, 1)] && people.some(function (pp) { return pp.id === id && pp.pick.set.indexOf(j + 1) >= 0; }));
-                    if (R.mBeforeRest && nextRest) s += 6;
-                    if (R.mBeforeRest && (REST[pv] || pAbs)) s -= 6;
-                    if (pv === 'p' || pv === 'P') s -= opts.model === '6h' ? 1 : 3;
+                    if (R.mBeforeRest && nextRest) s += R.altMP ? 12 : 6;
+                    if (R.mBeforeRest && (REST[pv] || pAbs)) s -= R.altMP ? 12 : 6;
+                    if (R.altMP) { if (pv === 'p' || pv === 'P') s += 4; else if (pv === 'm' || pv === 'M') s -= 4; }
+                    else if (pv === 'p' || pv === 'P') s -= opts.model === '6h' ? 1 : 3;
                     if (nv === 'm' || nv === 'M') s += 2;
                     if (R.eqOp) s += 0.4 * (st[id].p - st[id].m);
                     pref[id] = s;
@@ -780,7 +786,8 @@
         { k: 'blocks', n: 6, icon: 'repeat', t: 'Turno e diurno a rotazione: 5 settimane', d: 'Le posizioni da turnista sono sempre 5. Dopo 5 settimane il turnista lascia il posto al diurnista fuori turno da più tempo (il lunedì del pomeriggio).' },
         { k: 'repGap', n: 7, icon: 'event_busy', t: 'Reperibilità non ravvicinate', d: '', gap: true },
         { k: 'eqFest', n: 8, icon: 'calendar_month', t: 'Festivi distribuiti in modo equo', d: 'Domeniche e festivi: riposa prima chi ne ha lavorati di più.' },
-        { k: 'maxFerie', n: 9, icon: 'beach_access', t: 'Ferie: quanti alla volta', d: '', ferie: true }
+        { k: 'maxFerie', n: 9, icon: 'beach_access', t: 'Ferie: quanti alla volta', d: '', ferie: true },
+        { k: 'altMP', n: 10, icon: 'swap_vert', t: 'Alternanza mattina e pomeriggio', d: 'Per i diurnisti, quando la copertura lo permette: dopo un pomeriggio si fa una mattina e dopo una mattina un pomeriggio, invece di tanti giorni uguali di fila. La regola 5 (mattina prima del riposo, pomeriggio dopo) ha la precedenza.' }
     ];
     function ruleCard(r) {
         var o = GT.opts, on = !!o.rules[r.k], body = r.d;
@@ -801,10 +808,10 @@
     }
     function fixedRules() {
         var o = GT.opts;
-        return '<div class="gt-rule on"><span class="gt-rule-n">10</span><span class="msym gt-rule-i">nights_stay</span><div class="gt-rule-b"><b>Autisti in servizio</b><div class="gt-rule-d">Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte: ' +
+        return '<div class="gt-rule on"><span class="gt-rule-n">11</span><span class="msym gt-rule-i">nights_stay</span><div class="gt-rule-b"><b>Autisti in servizio</b><div class="gt-rule-d">Sempre <b>2 di mattina</b> e <b>2 di pomeriggio</b>. Di notte: ' +
             '<span class="gt-seg gt-seg-sm"><button class="' + (o.nights === 1 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',1)">1 autista</button><button class="' + (o.nights === 2 ? 'on' : '') + '" onclick="GT.setOpt(\'nights\',2)">2 autisti</button></span></div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">11</span><span class="msym gt-rule-i">schedule</span><div class="gt-rule-b"><b>36 ore a settimana per tutti</b><div class="gt-rule-d">Turnisti: ciclo pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni = 36 h). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + ' = 36 h. Le assenze contano come giornata di contratto.</div></div><span class="gt-fixed">sempre</span></div>' +
-            '<div class="gt-rule on"><span class="gt-rule-n">12</span><span class="msym gt-rule-i">fact_check</span><div class="gt-rule-b"><b>Turni già compilati e assenze restano come sono</b><div class="gt-rule-d">Il generatore parte da quello che c\u2019è già nel calendario (turni, ferie, reperibilità) e riempie solo le caselle vuote. Dopo una notte c\u2019è sempre lo smonto, mai 7 giorni di lavoro di fila.</div></div><span class="gt-fixed">sempre</span></div>';
+            '<div class="gt-rule on"><span class="gt-rule-n">12</span><span class="msym gt-rule-i">schedule</span><div class="gt-rule-b"><b>36 ore a settimana per tutti</b><div class="gt-rule-d">Turnisti: ciclo pomeriggio › mattina › notte › smonto › riposo (25 h 45 ogni 5 giorni = 36 h). Diurnisti: ' + MODELS[o.model].workDays + ' × ' + MODELS[o.model].label.replace(' al giorno', '') + ' = 36 h. Le assenze contano come giornata di contratto.</div></div><span class="gt-fixed">sempre</span></div>' +
+            '<div class="gt-rule on"><span class="gt-rule-n">13</span><span class="msym gt-rule-i">fact_check</span><div class="gt-rule-b"><b>Turni già compilati e assenze restano come sono</b><div class="gt-rule-d">Il generatore parte da quello che c\u2019è già nel calendario (turni, ferie, reperibilità) e riempie solo le caselle vuote. Dopo una notte c\u2019è sempre lo smonto, mai 7 giorni di lavoro di fila.</div></div><span class="gt-fixed">sempre</span></div>';
     }
     function needHtml() {
         var o = GT.opts, n = needPerWeek(o), y0 = o.year + '-01-01', y1 = o.year + '-12-31';
