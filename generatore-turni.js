@@ -927,9 +927,11 @@
         // 6. permessi a giornata, sui giorni di lavoro: notte (solo sulle notti), straordinari, recuperi, legge
         order.forEach(function (id) {
             var pn = singles(id, 'pn', ri(0, 2), function (d) { return G[d][id].v === 'N' && plan.role[d] && plan.role[d][id] === 't'; });
-            singles(id, 'p', ri(3, 6 - pn), function (d) { return workDay(id, d); });
-            singles(id, 'r', ri(1, 3), function (d) { return workDay(id, d); });
-            singles(id, 'pl', ri(0, 2), function (d) { return workDay(id, d); });
+            // chi è di notte non prende un permesso straordinario: prende il permesso notte (vedi GT.simAbs)
+            var day = function (d) { return workDay(id, d) && G[d][id].v !== 'N' && G[d][id].v !== 'M+N'; };
+            singles(id, 'p', ri(3, 6 - pn), day);
+            singles(id, 'r', ri(1, 3), day);
+            singles(id, 'pl', ri(0, 2), day);
         });
         out.sort(function (a, b) { return a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : a.id < b.id ? -1 : 1; });
         return { list: out, stats: stats, handover: handover };
@@ -1949,7 +1951,14 @@
             var base = generate({ year: y, ops: inp.ops, hist: inp.hist, histRep: inp.histRep, holidays: H, opts: GT.opts, extraAbs: portal });
             var S = simAbsences(base, { seed: (Date.now() % 2147483640) + 1, handover: mode === 'cambio' });
             var p2 = generate({ year: y, ops: inp.ops, hist: inp.hist, histRep: inp.histRep, holidays: H, opts: GT.opts, extraAbs: S.list.concat(portal) });
-            S.list.forEach(function (a) { if (a.sub !== 'pn') return; var nx = p2.cells[addDays(a.iso, 1)], c = nx && nx[a.id]; if (!(c && c.note === 'notte non fatta')) a.sub = 'p'; });
+            // nel piano rifatto la notte di un turnista può cadere in un altro giorno: un permesso a giornata che
+            // cade su una notte (il giorno dopo lo smonto diventa "notte non fatta") è sempre un permesso notte,
+            // vale 1 e copre notte e smonto; un permesso notte che non cade più su una notte torna permesso normale
+            S.list.forEach(function (a) {
+                if (a.sub !== 'pn' && a.sub !== 'p' && a.sub !== 'r' && a.sub !== 'pl') return;
+                var nx = p2.cells[addDays(a.iso, 1)], c = nx && nx[a.id], night = !!(c && c.note === 'notte non fatta');
+                if (night) a.sub = 'pn'; else if (a.sub === 'pn') a.sub = 'p';
+            });
             var st = {}; S.list.forEach(function (a) { st[a.sub] = (st[a.sub] || 0) + 1; });
             GT.simInfo[y] = { list: S.list, stats: st, handover: S.handover, mode: mode, updatedAt: now };
             await simDoc(y).set(GT.simInfo[y]);
