@@ -18,7 +18,7 @@
     'use strict';
 
     var SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.135.0/+esm';
-    var MODELS = { 'claude-sonnet-5-5': 'Sonnet 5.5 \u00b7 veloce, costa la metà', 'claude-opus-5-5': 'Opus 5.5 \u00b7 ragiona di più, costa il doppio' };
+    var MODELS = { 'claude-haiku-5-5': 'Haiku 5.5 \u00b7 il più economico, per domande semplici', 'claude-sonnet-5-5': 'Sonnet 5.5 \u00b7 consigliato', 'claude-opus-5-5': 'Opus 5.5 \u00b7 ragiona di più, costa il doppio di Sonnet' };
     var MODEL_STORE = 'seg_model', MODEL_DEFAULT = 'claude-sonnet-5-5';
     function model() { var m = lsGet(MODEL_STORE); return MODELS[m] ? m : MODEL_DEFAULT; }
     var KEY_STORE = 'seg_api_key', CHAT_STORE = 'seg_chat_v1';
@@ -365,7 +365,7 @@
             tools: toolDefs(),
             messages: SEG.api
         };
-        if (!SEG.noFallback) { p.betas = ['server-side-fallback-2026-07-01']; p.fallbacks = 'default'; }
+        if (!SEG.noFallback && p.model !== 'claude-haiku-5-5') { p.betas = ['server-side-fallback-2026-07-01']; p.fallbacks = 'default'; }
         return p;
     }
     async function runTool(tu) {
