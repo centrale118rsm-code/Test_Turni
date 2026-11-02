@@ -1,8 +1,8 @@
 /*
  * ══════════════════════════════════════════════════════════════════════════
- *  AREA TEST — SEGRETARIO PARTICOLARE (assistente Claude per i turni)
+ *  AREA TEST — SEGRETARIO MARINO (assistente Claude per i turni)
  * ══════════════════════════════════════════════════════════════════════════
- *  Area coordinatore › Area test › "Segretario particolare".
+ *  Area coordinatore › Area test › "Segretario Marino".
  *  Il coordinatore inserisce la SUA chiave API di Claude: resta solo nel
  *  browser (localStorage), non va su GitHub né nel database finto.
  *  Si chatta con il segretario dalla bolla in basso a destra: legge il
@@ -18,7 +18,7 @@
     'use strict';
 
     var SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.135.0/+esm';
-    var MODEL = 'claude-opus-5-5';
+    var MODEL = 'claude-haiku-5-5';   // Haiku: il più economico
     var KEY_STORE = 'seg_api_key', CHAT_STORE = 'seg_chat_v1';
     var MAX_STEPS = 16;
 
@@ -39,6 +39,16 @@
     function norm(n) { return String(n || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, ''); }
     function fail(msg) { var e = new Error(msg); e.toolError = true; throw e; }
     function loggedIn() { return typeof isCoordLoggedIn === 'function' && isCoordLoggedIn(); }
+    // chi sta parlando con Marino: il coordinatore (dopo la password) oppure l'operatore scelto in "Chi sei?"
+    function coordName() { try { return (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : 'MOSCA'; } catch (e) { return 'MOSCA'; } }
+    function ctx() {
+        if (loggedIn()) return { coord: true, name: coordName(), op: null, id: 'coord' };
+        var n = ''; try { n = (typeof userIdentity !== 'undefined' && userIdentity) ? String(userIdentity) : ''; } catch (e) {}
+        var op = null;
+        if (n && typeof drivers !== 'undefined') op = drivers.filter(function (d) { return norm(d.name) === norm(n) || norm(d.originalName) === norm(n); })[0] || null;
+        return { coord: false, name: n && !/^ospite$/i.test(n) ? n : '', op: op, id: 'op:' + norm(n || 'ospite') };
+    }
+    function cap(s) { s = String(s || '').toLowerCase(); return s.replace(/(^|[\s'])\S/g, function (c) { return c.toUpperCase(); }); }
 
     // ───────────────────────── calendario ─────────────────────────
     function ready() { if (typeof finalData === 'undefined' || !finalData.length || typeof drivers === 'undefined') fail('Il calendario non è ancora caricato: riprova tra un attimo.'); }
@@ -111,7 +121,9 @@
             run: function () {
                 ready();
                 var codes = wheelPaletteItems().map(function (i) { return (i.subV ? 'assenza ' + i.subV : i.v) + ' = ' + i.label + (i.time ? ' (' + i.time + ')' : ''); });
+                var c = ctx();
                 return {
+                    chi_ti_parla: c.coord ? 'il coordinatore ' + c.name : (c.op ? 'l\u2019operatore ' + c.op.name : (c.name || 'un ospite')),
                     oggi: isoOf(new Date()) + ' ' + WD[new Date().getDay()],
                     anno_aperto: SHIFT_YEAR,
                     anno_di_lavoro: typeof activeYear !== 'undefined' ? activeYear : SHIFT_YEAR,
@@ -144,6 +156,7 @@
             }
         },
         modifica_turni: {
+            coordOnly: true,
             description: 'Cambia una o più caselle del calendario in un colpo solo (un solo passo di annullamento). Per ogni casella indica o un turno ("turno") o un’assenza ("assenza"), oppure svuota=true. Le modifiche restano in sospeso finché non vengono salvate. Con copertura_automatica=true, per le nuove assenze l’app cerca da sola chi copre e sposta la reperibilità se serve (stessa logica della ruota in modalità Auto).',
             schema: {
                 type: 'object', additionalProperties: false, required: ['modifiche'],
@@ -203,6 +216,7 @@
             }
         },
         imposta_reperibilita: {
+            coordOnly: true,
             description: 'Assegna la reperibilità di un giorno (dalle 13:00 di quel giorno alle 13:00 del giorno dopo) a un operatore, oppure la toglie (operatore vuoto). Resta in sospeso finché non si salva.',
             schema: {
                 type: 'object', additionalProperties: false, required: ['data', 'operatore'],
@@ -248,11 +262,13 @@
             }
         },
         annulla_ultima_modifica: {
+            coordOnly: true,
             description: 'Annulla l’ultima modifica in sospeso (come il tasto Annulla della ruota).',
             schema: { type: 'object', properties: {}, additionalProperties: false },
             run: function () { if (!coordUndoStack.length) return 'Non c’è niente da annullare.'; coordUndo(); return { fatto: 'annullata', da_salvare: pendingChangesCount() }; }
         },
         salva_modifiche: {
+            coordOnly: true,
             description: 'Salva tutte le modifiche in sospeso, che diventano visibili a tutti (nell’area test: nel database finto). Usalo SOLO quando l’utente ti chiede esplicitamente di salvare.',
             schema: { type: 'object', properties: {}, additionalProperties: false },
             run: async function () {
@@ -272,6 +288,7 @@
             }
         },
         genera_anno: {
+            coordOnly: true,
             description: 'Usa il generatore automatico (sezione Generazione turni) per creare l’anno indicato con le regole impostate lì. Lavoro grosso: chiedi conferma all’utente prima. Se l’anno era già generato l’app chiede conferma per rigenerarlo.',
             schema: { type: 'object', additionalProperties: false, required: ['anno'], properties: { anno: { type: 'integer' } } },
             run: async function (a) {
@@ -286,39 +303,46 @@
         }
     };
     function toolDefs() {
-        return Object.keys(TOOLS).map(function (k) { return { name: k, description: TOOLS[k].description, input_schema: TOOLS[k].schema, eager_input_streaming: true }; });
+        var c = ctx();
+        return Object.keys(TOOLS).filter(function (k) { return c.coord || !TOOLS[k].coordOnly; }).map(function (k) { return { name: k, description: TOOLS[k].description, input_schema: TOOLS[k].schema, eager_input_streaming: true }; });
     }
     SEG._t = TOOLS;
     var TOOL_LABEL = { info_generali: 'Guardo chi c’è', leggi_turni: 'Leggo i turni', modifica_turni: 'Modifico i turni', imposta_reperibilita: 'Sistemo la reperibilità', conteggio_ore: 'Conto le ore', annulla_ultima_modifica: 'Annullo', salva_modifiche: 'Salvo', mostra_nel_calendario: 'Apro il calendario', genera_anno: 'Genero l’anno' };
 
     // ───────────────────────── prompt ─────────────────────────
     function systemPrompt() {
-        var who = '';
-        try { who = (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : ''; } catch (e) {}
-        return [
-            'Ti chiami Marino e sei il segretario particolare del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
-            who ? 'Il coordinatore si chiama ' + who + '.' : '',
-            'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').',
-            '',
-            'CARATTERE: sei simpatico, scherzoso, un po’ sfacciato. Dai del tu. Ogni tanto prendi in giro il coordinatore con affetto (per le richieste all’ultimo minuto, per i turni che cambia tre volte, per il caffè che di sicuro ha in mano…), ma senza mai essere offensivo e senza esagerare: una battuta ogni tanto, non in ogni frase. Quando si parla di turni sei preciso e affidabile: lo scherzo non deve mai rendere ambigua un’informazione. Risposte brevi, da chat; elenchi solo quando servono.',
-            '',
-            'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, modifichi caselle e reperibilità, annulli, salvi, porti il calendario su un giorno, lanci il generatore annuale. Non inventare mai turni: se non li hai letti, leggili.',
-            '',
-            'REGOLE DEI TURNI (da tenere d’occhio quando proponi o fai modifiche, e da segnalare se una richiesta le viola):',
+        var c = ctx(), today = 'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').';
+        var who = c.coord
+            ? 'Stai parlando con il COORDINATORE dei turni, ' + cap(c.name) + ': chiamalo per nome (' + cap(c.name) + '). È il capo: può chiederti di leggere e di modificare i turni di tutti.'
+            : (c.op
+                ? 'Stai parlando con ' + cap(c.op.name) + ', un AUTISTA SOCCORRITORE (nel calendario è la colonna "' + c.op.name + '"): chiamalo per nome. Quando dice "io", "i miei turni", "quando lavoro" intende la colonna ' + c.op.name + '. Non è il coordinatore: con lui leggi e spieghi i turni, ma non puoi modificarli. Se vuole un cambio, ferie o un permesso, digli di fare la richiesta dal portale richieste (freccia a destra dello schermo) o di parlarne con il coordinatore ' + cap(coordName()) + '.'
+                : 'Stai parlando con ' + (c.name ? cap(c.name) : 'una persona che non ha scelto chi è (menu › Chi sei?)') + ', che non è il coordinatore e non è una colonna del calendario: leggi e spieghi i turni, ma non puoi modificarli.');
+        var teaseTarget = c.coord ? 'il coordinatore (per le richieste all’ultimo minuto, per i turni che cambia tre volte, per il caffè che di sicuro ha in mano…)' : 'il collega (per le notti di cui si lamenta, per le ferie che chiede sempre ad agosto, per il caffè della macchinetta…)';
+        var can = c.coord
+            ? 'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, modifichi caselle e reperibilità, annulli, salvi, porti il calendario su un giorno, lanci il generatore annuale. Non inventare mai turni: se non li hai letti, leggili.'
+            : 'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, porti il calendario su un giorno. NON puoi modificare niente. Non inventare mai turni: se non li hai letti, leggili.';
+        var lines = [
+            'Ti chiami Marino e sei il segretario dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
+            who, today, '',
+            'CARATTERE: sei simpatico, scherzoso, un po’ sfacciato. Dai del tu. Ogni tanto prendi in giro ' + teaseTarget + ' con affetto, senza mai essere offensivo e senza esagerare: una battuta ogni tanto, non in ogni frase. Quando si parla di turni sei preciso e affidabile: lo scherzo non deve mai rendere ambigua un’informazione. Risposte brevi, da chat; elenchi solo quando servono.',
+            '', can, '',
+            'REGOLE DEI TURNI' + (c.coord ? ' (da tenere d’occhio quando proponi o fai modifiche, e da segnalare se una richiesta le viola)' : '') + ':',
             '- Copertura di ogni giorno: 2 di mattina, 2 di pomeriggio, 1 di notte.',
             '- Turnisti (maiuscole) a ciclo; diurnisti (minuscole m/p/r). 36 ore a settimana.',
             '- Dopo una notte (N) sempre smonto (S) e poi riposo, anche per chi copre una notte non sua.',
             '- Mai 7 giorni di lavoro di fila. Riposi settimanali da rispettare.',
             '- La reperibilità va dalle 13:00 alle 13:00 del giorno dopo: il giorno dopo il reperibile fa pomeriggio o notte, mai la mattina.',
             '- Al massimo 2 persone in ferie nello stesso giorno.',
-            '',
-            'COME LAVORI:',
+            '', 'COME LAVORI:'
+        ];
+        if (c.coord) lines.push(
             '- Le modifiche restano IN SOSPESO (si vedono nel calendario con l’asterisco) finché non vengono salvate. Salva solo quando l’utente lo chiede esplicitamente; dopo una modifica ricordagli che va salvata.',
             '- Prima di cambiare più di una decina di caselle, o di generare un anno, riassumi cosa farai e chiedi conferma.',
+            '- Dopo una modifica dì in breve cosa hai cambiato e se la copertura o le regole ne risentono.');
+        lines.push(
             '- Se una richiesta è ambigua (quale operatore, quale giorno), chiedi. Se manca l’anno, intendi l’anno aperto nel calendario.',
-            '- Dopo una modifica dì in breve cosa hai cambiato e se la copertura o le regole ne risentono.',
-            '- Le date per gli strumenti sono AAAA-MM-GG; all’utente scrivile in modo naturale (es. "martedì 5 gennaio").'
-        ].join('\n').replace('dì', 'dì');
+            '- Le date per gli strumenti sono AAAA-MM-GG; all’utente scrivile in modo naturale (es. "martedì 5 gennaio").');
+        return lines.join('\n');
     }
 
     // ───────────────────────── Claude ─────────────────────────
@@ -339,12 +363,12 @@
             tools: toolDefs(),
             messages: SEG.api
         };
-        if (!SEG.noFallback) { p.betas = ['server-side-fallback-2026-07-01']; p.fallbacks = 'default'; }
         return p;
     }
     async function runTool(tu) {
         var t = TOOLS[tu.name];
         if (!t) return { type: 'tool_result', tool_use_id: tu.id, content: 'Strumento sconosciuto: ' + tu.name, is_error: true };
+        if (t.coordOnly && !ctx().coord) return { type: 'tool_result', tool_use_id: tu.id, content: 'Non permesso: solo il coordinatore (entrato con la password) può modificare i turni.', is_error: true };
         var input = tu.input;
         if (!input || typeof input !== 'object' || Array.isArray(input)) return { type: 'tool_result', tool_use_id: tu.id, content: 'INVALID_JSON: parametri non validi, riprova.', is_error: true };
         try {
@@ -357,7 +381,7 @@
     }
     function errText(e) {
         var s = e && (e.status || (e.error && e.error.status));
-        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Marino dell\u2019area coordinatore.';
+        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Segretario Marino dell\u2019area coordinatore.';
         if (s === 403) return 'La chiave non ha accesso a questo modello (403).';
         if (s === 429) return 'Troppe richieste o credito finito (429). Riprova tra poco o controlla il credito su console.anthropic.com.';
         if (s === 529 || s === 503) return 'I server di Claude sono sovraccarichi: riprova tra un minuto.';
@@ -368,7 +392,9 @@
     async function send(text) {
         if (SEG.busy) return;
         text = String(text || '').trim(); if (!text) return;
-        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Marino" dell’area coordinatore.' }); return; }
+        if (!SEG.enabled) return;
+        if (!getKey()) { renderChat(); return; }
+        if (ctx().id !== SEG.who) loadChat();
         SEG.busy = true;
         var startLen = SEG.api.length;
         SEG.api.push({ role: 'user', content: text });
@@ -381,8 +407,7 @@
                 var msg;
                 try { msg = await streamOnce(c, bubble); }
                 catch (e) {
-                    if (!SEG.noFallback && e && e.status === 400 && /fallback/i.test(String(e.message))) { SEG.noFallback = true; msg = await streamOnce(c, bubble); }
-                    else throw e;
+                    throw e;
                 }
                 SEG.api.push({ role: 'assistant', content: msg.content });
                 if (msg.stop_reason === 'refusal') { bubble.text += (bubble.text ? '\n\n' : '') + '(Su questa richiesta non posso aiutarti.)'; break; }
@@ -421,14 +446,16 @@
 
     // ───────────────────────── memoria della chat ─────────────────────────
     function addView(v) { v.tools = v.tools || []; SEG.view.push(v); return v; }
+    function chatKey() { return CHAT_STORE + ':' + (SEG.who || 'coord'); }
     function saveChat() {
-        if (!lsSet(CHAT_STORE, JSON.stringify({ api: SEG.api, view: SEG.view.map(function (v) { return { role: v.role, text: v.text, tools: v.tools, err: v.err }; }) }))) {
+        if (!lsSet(chatKey(), JSON.stringify({ api: SEG.api, view: SEG.view.map(function (v) { return { role: v.role, text: v.text, tools: v.tools, err: v.err }; }) }))) {
             // memoria piena: si tiene solo la vista
-            lsSet(CHAT_STORE, null);
+            lsSet(chatKey(), null);
         }
     }
     function loadChat() {
-        try { var o = JSON.parse(lsGet(CHAT_STORE) || 'null'); if (o && Array.isArray(o.api)) { SEG.api = o.api; SEG.view = o.view || []; } } catch (e) {}
+        SEG.who = ctx().id; SEG.api = []; SEG.view = [];
+        try { var o = JSON.parse(lsGet(chatKey()) || 'null'); if (o && Array.isArray(o.api)) { SEG.api = o.api; SEG.view = o.view || []; } } catch (e) {}
         // una conversazione deve finire con la risposta dell'assistente
         while (SEG.api.length && SEG.api[SEG.api.length - 1].role === 'user') SEG.api.pop();
     }
@@ -439,15 +466,30 @@
     };
 
     // ───────────────────────── interfaccia ─────────────────────────
+    // volto di Marino: occhialoni, un occhio strizzato, baffoni e linguaccia
+    function face(px) {
+        return '<svg class="seg-face" width="' + px + '" height="' + px + '" viewBox="0 0 64 64" aria-hidden="true">' +
+            '<path d="M18 17q4-11 13-5q4-9 12-1q7-3 6 7" fill="#5b3a1e"/>' +
+            '<circle cx="32" cy="35" r="24" fill="#ffd34d" stroke="#c98a12" stroke-width="2"/>' +
+            '<circle cx="16" cy="42" r="4" fill="#ff9aa8" opacity=".7"/><circle cx="48" cy="42" r="4" fill="#ff9aa8" opacity=".7"/>' +
+            '<circle cx="23" cy="31" r="8" fill="#fff" stroke="#1f2937" stroke-width="2.6"/><circle cx="41" cy="31" r="8" fill="#fff" stroke="#1f2937" stroke-width="2.6"/>' +
+            '<path d="M31 31h2" stroke="#1f2937" stroke-width="2.6"/>' +
+            '<circle cx="25" cy="33" r="3.6" fill="#1f2937"/><circle cx="26.2" cy="31.8" r="1.1" fill="#fff"/>' +
+            '<path d="M36.5 32q4.5-4.5 9 0" fill="none" stroke="#1f2937" stroke-width="2.6" stroke-linecap="round"/>' +
+            '<path d="M29 54q5 7 8 0z" fill="#f05a7e"/>' +
+            '<path d="M24 50q8 5 16 0" fill="none" stroke="#7a3b12" stroke-width="2.2" stroke-linecap="round"/>' +
+            '<path d="M17 47q7-9 15-3q8-6 15 3q-7 2-15-1q-8 3-15 1z" fill="#5b3a1e"/>' +
+            '</svg>';
+    }
     var CSS = '' +
-        '#seg-fab{position:fixed;right:16px;bottom:calc(132px + env(safe-area-inset-bottom,0px));z-index:9590;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:26px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff;box-shadow:0 10px 24px -6px rgba(29,78,216,.55)}' +
+        '#seg-fab{position:fixed;right:16px;bottom:calc(132px + env(safe-area-inset-bottom,0px));z-index:9590;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:26px;padding:0;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff;box-shadow:0 10px 24px -6px rgba(29,78,216,.55)}' +
         '#seg-fab.show{display:flex}#seg-fab:active{transform:scale(.95)}' +
         '#seg-fab .seg-dot{position:absolute;top:4px;right:4px;width:11px;height:11px;border-radius:50%;background:#22c55e;border:2px solid #fff;display:none}#seg-fab.busy .seg-dot{display:block;animation:segPulse 1s infinite}' +
         '@keyframes segPulse{50%{opacity:.3}}' +
         '#seg-panel{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:9600;width:min(410px,calc(100vw - 32px));height:min(640px,calc(100vh - 120px));display:none;flex-direction:column;background:var(--cc-surface);color:var(--cc-text);border:1px solid var(--cc-line);border-radius:16px;box-shadow:0 24px 60px -16px rgba(15,23,42,.55);overflow:hidden}' +
         '#seg-panel.open{display:flex}' +
         '.seg-head{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 14px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff}' +
-        '.seg-ava{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}' +
+        '.seg-ava{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}' +
         '.seg-head b{display:block;font-size:14.5px}.seg-head small{display:block;font-size:11.5px;opacity:.85}' +
         '.seg-head .seg-ib{margin-left:auto}.seg-ib{background:rgba(255,255,255,.14);border:0;color:#fff;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}.seg-ib:hover{background:rgba(255,255,255,.26)}' +
         '.seg-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--cc-bg)}' +
@@ -461,7 +503,7 @@
         '.seg-foot textarea{flex:1;resize:none;height:42px;max-height:120px;padding:10px 12px;border:1px solid var(--cc-line);border-radius:12px;background:var(--cc-surface);color:var(--cc-text);font:inherit;font-size:14px;outline:none}' +
         '.seg-foot textarea:focus{border-color:var(--cc-accent)}' +
         '.seg-send{width:42px;height:42px;border-radius:12px;border:0;background:var(--cc-accent);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}.seg-send:disabled{opacity:.45;cursor:default}' +
-        '.seg-empty{margin:auto;text-align:center;color:var(--cc-muted);font-size:13px;max-width:280px}.seg-empty .seg-big{font-size:40px;display:block;margin-bottom:6px}' +
+        '.seg-empty{margin:auto;text-align:center;color:var(--cc-muted);font-size:13px;max-width:280px}.seg-empty .seg-big{display:block;margin:0 auto 6px;width:72px}.seg-face{display:block;flex:none}#seg-fab:hover .seg-face{transform:rotate(-8deg)}.seg-face{transition:transform .2s}' +
         '.seg-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}.seg-chips button{border:1px solid var(--cc-line);background:var(--cc-surface);color:var(--cc-text);border-radius:999px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}' +
         '.seg-card{background:var(--cc-surface);border:1px solid var(--cc-line);border-radius:var(--cc-r);padding:18px;max-width:720px;margin-bottom:16px}' +
         '.seg-card h3{margin:0 0 6px;font-size:16px}.seg-card p{margin:0 0 10px;color:var(--cc-muted);font-size:13.5px}' +
@@ -474,13 +516,13 @@
         if (document.getElementById('seg-panel')) return;
         var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         var fab = document.createElement('button');
-        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Marino, il segretario';
-        fab.innerHTML = '🕴️<span class="seg-dot"></span>'; fab.onclick = function () { SEG.toggle(); };
+        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Segretario Marino';
+        fab.innerHTML = face(46) + '<span class="seg-dot"></span>'; fab.onclick = function () { SEG.toggle(); };
         document.body.appendChild(fab);
         var p = document.createElement('div');
-        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Marino, il segretario');
+        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Segretario Marino');
         p.innerHTML =
-            '<div class="seg-head"><div class="seg-ava">🕴️</div><div><b>Marino</b><small id="seg-status">segretario particolare, al tuo servizio (più o meno)</small></div>' +
+            '<div class="seg-head"><div class="seg-ava">' + face(34) + '</div><div><b>Segretario Marino</b><small id="seg-status">al tuo servizio (più o meno)</small></div>' +
             '<button class="seg-ib" title="Nuova chat" onclick="SEG.newChat()"><span class="msym">add_comment</span></button>' +
             '<button class="seg-ib" style="margin-left:0" title="Chiudi" onclick="SEG.toggle(false)"><span class="msym">close</span></button></div>' +
             '<div class="seg-msgs" id="seg-msgs"></div>' +
@@ -492,14 +534,15 @@
     }
     function refreshFab() {
         var fab = document.getElementById('seg-fab'); if (!fab) return;
-        var show = loggedIn() && !!getKey();
-        fab.classList.toggle('show', show && !SEG.open);
+        var booted = typeof appBooted !== 'undefined' && appBooted && !(typeof SERVER_MODE !== 'undefined' && SERVER_MODE);
+        fab.classList.toggle('show', booted && SEG.enabled && !SEG.open);
         fab.classList.toggle('busy', SEG.busy);
-        if (!show && SEG.open && !loggedIn()) SEG.toggle(false);
+        // è cambiato chi usa l'app (password del coordinatore, "Chi sei?"): ognuno ha la sua conversazione
+        if (!SEG.busy && booted && ctx().id !== SEG.who) { loadChat(); if (SEG.open) renderChat(); }
     }
     SEG.toggle = function (on) {
         SEG.open = on === undefined ? !SEG.open : !!on;
-        if (SEG.open && !loggedIn()) SEG.open = false;
+        if (!SEG.enabled) SEG.open = false;
         var p = document.getElementById('seg-panel'); if (!p) return;
         p.classList.toggle('open', SEG.open); refreshFab();
         if (SEG.open) { renderChat(); setTimeout(function () { var i = document.getElementById('seg-in'); if (i) i.focus(); }, 50); }
@@ -510,6 +553,13 @@
     };
     SEG.ask = function (t) { send(t); };
     var SUGGEST = ['Chi è di notte questo fine settimana?', 'Metti Bianchi in ferie venerdì e trova chi copre', 'Come siamo messi con le ore questo mese?', 'Dimmi qualcosa di carino (se ci riesci)'];
+    var SUGGEST_OP = ['Quando lavoro la prossima settimana?', 'Quante ore ho fatto questo mese?', 'Chi è reperibile domani?', 'Raccontami una barzelletta sui turni'];
+    function keyFormHtml() {
+        return '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>Per parlare con me serve una chiave API di Claude (inizia con sk-ant-). Resta solo su questo dispositivo.' +
+            '<div class="seg-row" style="margin-top:12px;justify-content:center"><input id="seg-key-p" class="cc-input" type="password" autocomplete="off" placeholder="sk-ant-…" spellcheck="false" style="min-width:0">' +
+            '<button class="cc-btn primary" type="button" onclick="SEG.saveKey(\'seg-key-p\')">Salva</button></div>' +
+            '<div class="seg-warn" style="text-align:left">Chi usa questo dispositivo o un\u2019estensione del browser potrebbe leggerla: usa una chiave con un limite di spesa basso.</div></div>';
+    }
     function fmt(text) {
         // grassetto **…** e a capo; il resto è testo semplice
         return h(text).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
@@ -523,13 +573,17 @@
     }
     function renderChat() {
         var box = document.getElementById('seg-msgs'); if (!box) return;
-        if (!SEG.view.length) {
-            box.innerHTML = '<div class="seg-empty"><span class="seg-big">🕴️</span>Eccomi, capo: sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
-                '<div class="seg-chips">' + SUGGEST.map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
+        var c = ctx();
+        if (!getKey()) box.innerHTML = keyFormHtml();
+        else if (!SEG.view.length) {
+            var hi = c.coord ? 'Eccomi, ' + cap(c.name) + ': sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).'
+                : 'Ciao' + (c.name ? ' ' + cap(c.name) : '') + ', sono Marino! Chiedimi dei tuoi turni, delle ore o di chi lavora quando. Modificarli no: quello lo fa il capo.';
+            box.innerHTML = '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>' + h(hi) +
+                '<div class="seg-chips">' + (c.coord ? SUGGEST : SUGGEST_OP).map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
         } else box.innerHTML = SEG.view.map(msgHtml).join('');
         box.scrollTop = box.scrollHeight;
         var sb = document.getElementById('seg-send'); if (sb) sb.disabled = SEG.busy;
-        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'Marino sta pensando…' : 'segretario particolare, al tuo servizio (più o meno)';
+        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'sto pensando…' : 'al tuo servizio (più o meno)';
         refreshFab();
     }
     var liveRaf = 0;
@@ -538,9 +592,10 @@
     // ───────────────────────── sezione dell'area coordinatore ─────────────────────────
     function renderSection() {
         var main = document.getElementById('cc-main'); if (!main) return;
+        if (!SEG.enabled) { main.innerHTML = '<div class="seg-card"><h3>Marino è spento</h3><p>Lo ha disattivato l\u2019amministratore (pannello admin › Segretario Marino).</p></div>'; return; }
         var k = getKey(), masked = k ? k.slice(0, 10) + '…' + k.slice(-4) : '';
         main.innerHTML =
-            '<div class="seg-card"><h3>🕴️ Marino, il tuo segretario particolare</h3>' +
+            '<div class="seg-card"><h3 style="display:flex;align-items:center;gap:10px">' + face(40) + 'Segretario Marino</h3>' +
             '<p>Marino è un assistente Claude che legge il calendario, risponde sui turni e li modifica per te. Le modifiche che fa restano in sospeso (come in Modifica turni): le salva solo quando glielo chiedi. Ha un caratterino: ogni tanto ti prende in giro.</p>' +
             '<div class="seg-row">' + (k ? '<span class="seg-ok">Chiave inserita</span> <code>' + h(masked) + '</code>' : '<span>Nessuna chiave inserita.</span>') + '</div>' +
             '<div class="seg-row" style="margin-top:10px"><input id="seg-key" class="cc-input" type="password" autocomplete="off" placeholder="sk-ant-…" spellcheck="false">' +
@@ -549,20 +604,49 @@
             '<div class="seg-warn"><b>Attenzione alla chiave.</b> Resta solo in questo browser (memoria del dispositivo): non va su GitHub né nel database. Però le richieste partono dal browser, quindi chi usa questo dispositivo o un’estensione del browser potrebbe leggerla. Usa una chiave creata apposta su console.anthropic.com, con un limite di spesa basso, e cancellala da qui quando hai finito. Ogni messaggio costa qualche centesimo.</div>' +
             '<div class="seg-row" style="margin-top:14px"><button class="cc-btn primary" onclick="SEG.toggle(true)"' + (k ? '' : ' disabled') + '><span class="msym">chat</span>Apri la chat</button>' +
             '<button class="cc-btn" onclick="SEG.newChat()"><span class="msym">restart_alt</span>Nuova conversazione</button></div>' +
-            '<p style="margin-top:12px;font-size:12px">Modello: ' + MODEL + '. Puoi chiamarlo anche dal calendario con la bolla 🕴️ in basso a destra.</p></div>';
+            '<p style="margin-top:12px;font-size:12px">Modello: Claude Haiku 5.5. Puoi chiamarlo anche dal calendario con la sua faccia in basso a destra.</p></div>';
     }
-    SEG.saveKey = function () {
-        var i = document.getElementById('seg-key'), v = (i && i.value || '').trim();
+    SEG.saveKey = function (inputId) {
+        var i = document.getElementById(inputId || 'seg-key'), v = (i && i.value || '').trim();
         if (!/^sk-ant-/.test(v)) { toast('Non sembra una chiave di Claude (inizia con sk-ant-).', true); return; }
-        lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); renderSection(); refreshFab();
+        lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); if (document.getElementById('seg-key')) renderSection(); renderChat(); refreshFab();
     };
     SEG.removeKey = function () { lsSet(KEY_STORE, null); SEG.toggle(false); toast('Chiave cancellata da questo dispositivo'); renderSection(); refreshFab(); };
 
+    // ── interruttore dell'area admin: Marino acceso o spento per tutti ──
+    SEG.enabled = true;
+    function marinoDoc() { return typeof cfgRef === 'function' && typeof db !== 'undefined' && db ? cfgRef('marino') : null; }
+    function applyEnabled() {
+        if (!SEG.enabled && SEG.open) SEG.toggle(false);
+        var nb = document.querySelector('#cc-nav button[data-sec="segretario"]'); if (nb) nb.style.display = SEG.enabled ? '' : 'none';
+        if (!SEG.enabled && typeof ccSection !== 'undefined' && ccSection === 'segretario' && typeof ccGo === 'function') try { ccGo('panoramica'); } catch (e) {}
+        refreshFab(); renderAdmin();
+    }
+    function listenEnabled() {
+        if (typeof fbReady === 'undefined' || !fbReady || !marinoDoc()) { setTimeout(listenEnabled, 1500); return; }
+        try { marinoDoc().onSnapshot(function (d) { SEG.enabled = !(d.exists && d.data().enabled === false); applyEnabled(); }); } catch (e) { console.error(e); }
+    }
+    SEG.setEnabled = async function (on) {
+        var d = marinoDoc(); if (!d) return;
+        try { await d.set({ enabled: !!on, updatedAt: new Date().toISOString() }, { merge: true }); if (typeof showAdminToast === 'function') showAdminToast(on ? 'Marino acceso' : 'Marino spento'); }
+        catch (e) { console.error(e); if (typeof showAdminToast === 'function') showAdminToast('Salvataggio non riuscito'); }
+    };
+    function renderAdmin() {
+        var el = document.getElementById('adm-marino'); if (!el) return;
+        el.innerHTML = '<div style="display:flex;align-items:center;gap:14px;padding:16px;margin:0 16px 12px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card)">' + face(48) +
+            '<div style="flex:1"><b style="display:block;font-size:15px">Segretario Marino ' + (SEG.enabled ? '<span style="color:#16a34a">acceso</span>' : '<span style="color:#dc2626">spento</span>') + '</b>' +
+            '<small style="color:var(--text-sec)">Assistente Claude (Haiku 5.5) con la faccia in basso a destra: il coordinatore ci modifica i turni, gli operatori fanno domande. Spento, sparisce per tutti.</small></div>' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600"><input id="adm-marino-on" type="checkbox" style="width:22px;height:22px;accent-color:#16a34a" ' + (SEG.enabled ? 'checked' : '') + ' onchange="SEG.setEnabled(this.checked)">' + (SEG.enabled ? 'Attivo' : 'Disattivo') + '</label></div>' +
+            '<div style="margin:0 16px 16px;font-size:12.5px;color:var(--text-sec)">La chiave API resta sui singoli dispositivi (si inserisce dalla chat o dall’area coordinatore): da qui si accende o si spegne solo Marino.</div>';
+    }
     function boot() {
+        if (typeof ADM_TABS !== 'undefined') ADM_TABS.marino = ['Segretario Marino', 'Accendi o spegni l\u2019assistente Claude per tutti'];
+        renderAdmin(); listenEnabled();
         mount();
-        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Marino \u00b7 segretario particolare', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
+        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Segretario Marino', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
         window.GT_RENDER = window.GT_RENDER || {};
         window.GT_RENDER.segretario = renderSection;
+        var nb = document.querySelector('#cc-nav button[data-sec="segretario"] .msym'); if (nb) nb.outerHTML = face(21);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

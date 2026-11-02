@@ -102,17 +102,26 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   "Inserisci manualmente" segna solo l'assenza; i turni scoperti si sistemano toccando
   la casella.
 
-## Marino, il segretario particolare (assistente Claude, solo area test)
+## Segretario Marino (assistente Claude, solo area test)
 
-Area coordinatore (password **118**) › Area test › **Marino (segretario)** (`segretario.js`).
+Area coordinatore (password **118**) › Area test › **Segretario Marino** (`segretario.js`).
 Si inserisce la propria chiave API di Claude: resta **solo nel browser** (localStorage, chiave
-`seg_api_key`), non va su GitHub né nel database finto. Poi si chatta dalla bolla 🕴️ in basso
+`seg_api_key`), non va su GitHub né nel database finto. Poi si chatta dalla faccia di Marino in basso
 a destra (visibile solo da coordinatore). Marino legge il calendario, conta le ore,
 cambia caselle e reperibilità con gli stessi strumenti di Modifica turni (modifiche in sospeso,
 annullabili, salvate solo quando glielo si chiede), porta il calendario su un giorno e può
-lanciare il generatore annuale. Modello `claude-opus-5-5`, SDK ufficiale caricato da jsDelivr.
+lanciare il generatore annuale. Modello `claude-haiku-5-5` (il più economico). SDK ufficiale caricato da jsDelivr.
 Ha un carattere scherzoso e ogni tanto prende in giro il coordinatore.
 
 Attenzione: le chiamate a Claude partono dal browser, quindi la chiave è leggibile da chi usa
 il dispositivo o da un'estensione del browser. Usare una chiave dedicata con limite di spesa
 e cancellarla dalla sezione quando non serve.
+
+Marino lo può usare chiunque: la faccia in basso a destra c'è per tutti. Se si è entrati come
+coordinatore (password) parla con il coordinatore (Mosca, o il nome nelle impostazioni) e può
+modificare i turni; altrimenti parla con l'operatore scelto in "Chi sei?", risponde sui suoi
+turni e sulle ore ma non modifica niente (per i cambi rimanda al portale richieste o al
+coordinatore). Ognuno ha la sua conversazione. Se sul dispositivo non c'è ancora la chiave,
+la chat la chiede direttamente.
+
+L'amministratore lo accende o spegne per tutti dal pannello admin › Segretario Marino (documento `marino` in admin_config, campo `enabled`).
