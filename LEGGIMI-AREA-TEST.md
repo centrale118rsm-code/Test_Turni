@@ -102,15 +102,15 @@ Nell'Area coordinatore c'è un gruppo **Area test** con due sezioni nuove:
   "Inserisci manualmente" segna solo l'assenza; i turni scoperti si sistemano toccando
   la casella.
 
-## Marino, il segretario particolare (assistente Claude, solo area test)
+## Segretario Marino (assistente Claude, solo area test)
 
-Area coordinatore (password **118**) › Area test › **Marino (segretario)** (`segretario.js`).
+Area coordinatore (password **118**) › Area test › **Segretario Marino** (`segretario.js`).
 Si inserisce la propria chiave API di Claude: resta **solo nel browser** (localStorage, chiave
-`seg_api_key`), non va su GitHub né nel database finto. Poi si chatta dalla bolla 🕴️ in basso
+`seg_api_key`), non va su GitHub né nel database finto. Poi si chatta dalla faccia di Marino in basso
 a destra (visibile solo da coordinatore). Marino legge il calendario, conta le ore,
 cambia caselle e reperibilità con gli stessi strumenti di Modifica turni (modifiche in sospeso,
 annullabili, salvate solo quando glielo si chiede), porta il calendario su un giorno e può
-lanciare il generatore annuale. Modello `claude-opus-5-5`, SDK ufficiale caricato da jsDelivr.
+lanciare il generatore annuale. Modello a scelta nella sezione: `claude-sonnet-5-5` (predefinito, costa la metà) o `claude-opus-5-5`. SDK ufficiale caricato da jsDelivr.
 Ha un carattere scherzoso e ogni tanto prende in giro il coordinatore.
 
 Attenzione: le chiamate a Claude partono dal browser, quindi la chiave è leggibile da chi usa

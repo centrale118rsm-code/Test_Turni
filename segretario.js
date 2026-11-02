@@ -1,8 +1,8 @@
 /*
  * ══════════════════════════════════════════════════════════════════════════
- *  AREA TEST — SEGRETARIO PARTICOLARE (assistente Claude per i turni)
+ *  AREA TEST — SEGRETARIO MARINO (assistente Claude per i turni)
  * ══════════════════════════════════════════════════════════════════════════
- *  Area coordinatore › Area test › "Segretario particolare".
+ *  Area coordinatore › Area test › "Segretario Marino".
  *  Il coordinatore inserisce la SUA chiave API di Claude: resta solo nel
  *  browser (localStorage), non va su GitHub né nel database finto.
  *  Si chatta con il segretario dalla bolla in basso a destra: legge il
@@ -18,7 +18,9 @@
     'use strict';
 
     var SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.135.0/+esm';
-    var MODEL = 'claude-opus-5-5';
+    var MODELS = { 'claude-sonnet-5-5': 'Sonnet 5.5 \u00b7 veloce, costa la metà', 'claude-opus-5-5': 'Opus 5.5 \u00b7 ragiona di più, costa il doppio' };
+    var MODEL_STORE = 'seg_model', MODEL_DEFAULT = 'claude-sonnet-5-5';
+    function model() { var m = lsGet(MODEL_STORE); return MODELS[m] ? m : MODEL_DEFAULT; }
     var KEY_STORE = 'seg_api_key', CHAT_STORE = 'seg_chat_v1';
     var MAX_STEPS = 16;
 
@@ -296,7 +298,7 @@
         var who = '';
         try { who = (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : ''; } catch (e) {}
         return [
-            'Ti chiami Marino e sei il segretario particolare del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
+            'Ti chiami Marino e sei il segretario del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
             who ? 'Il coordinatore si chiama ' + who + '.' : '',
             'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').',
             '',
@@ -331,7 +333,7 @@
     }
     function params() {
         var p = {
-            model: MODEL, max_tokens: 16000,
+            model: model(), max_tokens: 16000,
             system: systemPrompt(),
             thinking: { type: 'adaptive' },
             output_config: { effort: 'medium' },
@@ -357,7 +359,7 @@
     }
     function errText(e) {
         var s = e && (e.status || (e.error && e.error.status));
-        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Marino dell\u2019area coordinatore.';
+        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Segretario Marino dell\u2019area coordinatore.';
         if (s === 403) return 'La chiave non ha accesso a questo modello (403).';
         if (s === 429) return 'Troppe richieste o credito finito (429). Riprova tra poco o controlla il credito su console.anthropic.com.';
         if (s === 529 || s === 503) return 'I server di Claude sono sovraccarichi: riprova tra un minuto.';
@@ -368,7 +370,7 @@
     async function send(text) {
         if (SEG.busy) return;
         text = String(text || '').trim(); if (!text) return;
-        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Marino" dell’area coordinatore.' }); return; }
+        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Segretario Marino" dell’area coordinatore.' }); return; }
         SEG.busy = true;
         var startLen = SEG.api.length;
         SEG.api.push({ role: 'user', content: text });
@@ -439,15 +441,30 @@
     };
 
     // ───────────────────────── interfaccia ─────────────────────────
+    // volto di Marino: occhialoni, un occhio strizzato, baffoni e linguaccia
+    function face(px) {
+        return '<svg class="seg-face" width="' + px + '" height="' + px + '" viewBox="0 0 64 64" aria-hidden="true">' +
+            '<path d="M18 17q4-11 13-5q4-9 12-1q7-3 6 7" fill="#5b3a1e"/>' +
+            '<circle cx="32" cy="35" r="24" fill="#ffd34d" stroke="#c98a12" stroke-width="2"/>' +
+            '<circle cx="16" cy="42" r="4" fill="#ff9aa8" opacity=".7"/><circle cx="48" cy="42" r="4" fill="#ff9aa8" opacity=".7"/>' +
+            '<circle cx="23" cy="31" r="8" fill="#fff" stroke="#1f2937" stroke-width="2.6"/><circle cx="41" cy="31" r="8" fill="#fff" stroke="#1f2937" stroke-width="2.6"/>' +
+            '<path d="M31 31h2" stroke="#1f2937" stroke-width="2.6"/>' +
+            '<circle cx="25" cy="33" r="3.6" fill="#1f2937"/><circle cx="26.2" cy="31.8" r="1.1" fill="#fff"/>' +
+            '<path d="M36.5 32q4.5-4.5 9 0" fill="none" stroke="#1f2937" stroke-width="2.6" stroke-linecap="round"/>' +
+            '<path d="M29 54q5 7 8 0z" fill="#f05a7e"/>' +
+            '<path d="M24 50q8 5 16 0" fill="none" stroke="#7a3b12" stroke-width="2.2" stroke-linecap="round"/>' +
+            '<path d="M17 47q7-9 15-3q8-6 15 3q-7 2-15-1q-8 3-15 1z" fill="#5b3a1e"/>' +
+            '</svg>';
+    }
     var CSS = '' +
-        '#seg-fab{position:fixed;right:16px;bottom:calc(132px + env(safe-area-inset-bottom,0px));z-index:9590;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:26px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff;box-shadow:0 10px 24px -6px rgba(29,78,216,.55)}' +
+        '#seg-fab{position:fixed;right:16px;bottom:calc(132px + env(safe-area-inset-bottom,0px));z-index:9590;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:26px;padding:0;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff;box-shadow:0 10px 24px -6px rgba(29,78,216,.55)}' +
         '#seg-fab.show{display:flex}#seg-fab:active{transform:scale(.95)}' +
         '#seg-fab .seg-dot{position:absolute;top:4px;right:4px;width:11px;height:11px;border-radius:50%;background:#22c55e;border:2px solid #fff;display:none}#seg-fab.busy .seg-dot{display:block;animation:segPulse 1s infinite}' +
         '@keyframes segPulse{50%{opacity:.3}}' +
         '#seg-panel{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:9600;width:min(410px,calc(100vw - 32px));height:min(640px,calc(100vh - 120px));display:none;flex-direction:column;background:var(--cc-surface);color:var(--cc-text);border:1px solid var(--cc-line);border-radius:16px;box-shadow:0 24px 60px -16px rgba(15,23,42,.55);overflow:hidden}' +
         '#seg-panel.open{display:flex}' +
         '.seg-head{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 14px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);color:#fff}' +
-        '.seg-ava{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}' +
+        '.seg-ava{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}' +
         '.seg-head b{display:block;font-size:14.5px}.seg-head small{display:block;font-size:11.5px;opacity:.85}' +
         '.seg-head .seg-ib{margin-left:auto}.seg-ib{background:rgba(255,255,255,.14);border:0;color:#fff;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}.seg-ib:hover{background:rgba(255,255,255,.26)}' +
         '.seg-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--cc-bg)}' +
@@ -461,7 +478,7 @@
         '.seg-foot textarea{flex:1;resize:none;height:42px;max-height:120px;padding:10px 12px;border:1px solid var(--cc-line);border-radius:12px;background:var(--cc-surface);color:var(--cc-text);font:inherit;font-size:14px;outline:none}' +
         '.seg-foot textarea:focus{border-color:var(--cc-accent)}' +
         '.seg-send{width:42px;height:42px;border-radius:12px;border:0;background:var(--cc-accent);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}.seg-send:disabled{opacity:.45;cursor:default}' +
-        '.seg-empty{margin:auto;text-align:center;color:var(--cc-muted);font-size:13px;max-width:280px}.seg-empty .seg-big{font-size:40px;display:block;margin-bottom:6px}' +
+        '.seg-empty{margin:auto;text-align:center;color:var(--cc-muted);font-size:13px;max-width:280px}.seg-empty .seg-big{display:block;margin:0 auto 6px;width:72px}.seg-face{display:block;flex:none}#seg-fab:hover .seg-face{transform:rotate(-8deg)}.seg-face{transition:transform .2s}' +
         '.seg-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}.seg-chips button{border:1px solid var(--cc-line);background:var(--cc-surface);color:var(--cc-text);border-radius:999px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}' +
         '.seg-card{background:var(--cc-surface);border:1px solid var(--cc-line);border-radius:var(--cc-r);padding:18px;max-width:720px;margin-bottom:16px}' +
         '.seg-card h3{margin:0 0 6px;font-size:16px}.seg-card p{margin:0 0 10px;color:var(--cc-muted);font-size:13.5px}' +
@@ -474,13 +491,13 @@
         if (document.getElementById('seg-panel')) return;
         var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         var fab = document.createElement('button');
-        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Marino, il segretario';
-        fab.innerHTML = '🕴️<span class="seg-dot"></span>'; fab.onclick = function () { SEG.toggle(); };
+        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Segretario Marino';
+        fab.innerHTML = face(46) + '<span class="seg-dot"></span>'; fab.onclick = function () { SEG.toggle(); };
         document.body.appendChild(fab);
         var p = document.createElement('div');
-        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Marino, il segretario');
+        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Segretario Marino');
         p.innerHTML =
-            '<div class="seg-head"><div class="seg-ava">🕴️</div><div><b>Marino</b><small id="seg-status">segretario particolare, al tuo servizio (più o meno)</small></div>' +
+            '<div class="seg-head"><div class="seg-ava">' + face(34) + '</div><div><b>Segretario Marino</b><small id="seg-status">al tuo servizio (più o meno)</small></div>' +
             '<button class="seg-ib" title="Nuova chat" onclick="SEG.newChat()"><span class="msym">add_comment</span></button>' +
             '<button class="seg-ib" style="margin-left:0" title="Chiudi" onclick="SEG.toggle(false)"><span class="msym">close</span></button></div>' +
             '<div class="seg-msgs" id="seg-msgs"></div>' +
@@ -524,12 +541,12 @@
     function renderChat() {
         var box = document.getElementById('seg-msgs'); if (!box) return;
         if (!SEG.view.length) {
-            box.innerHTML = '<div class="seg-empty"><span class="seg-big">🕴️</span>Eccomi, capo: sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
+            box.innerHTML = '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>Eccomi, capo: sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
                 '<div class="seg-chips">' + SUGGEST.map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
         } else box.innerHTML = SEG.view.map(msgHtml).join('');
         box.scrollTop = box.scrollHeight;
         var sb = document.getElementById('seg-send'); if (sb) sb.disabled = SEG.busy;
-        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'Marino sta pensando…' : 'segretario particolare, al tuo servizio (più o meno)';
+        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'sto pensando…' : 'al tuo servizio (più o meno)';
         refreshFab();
     }
     var liveRaf = 0;
@@ -540,7 +557,7 @@
         var main = document.getElementById('cc-main'); if (!main) return;
         var k = getKey(), masked = k ? k.slice(0, 10) + '…' + k.slice(-4) : '';
         main.innerHTML =
-            '<div class="seg-card"><h3>🕴️ Marino, il tuo segretario particolare</h3>' +
+            '<div class="seg-card"><h3 style="display:flex;align-items:center;gap:10px">' + face(40) + 'Segretario Marino</h3>' +
             '<p>Marino è un assistente Claude che legge il calendario, risponde sui turni e li modifica per te. Le modifiche che fa restano in sospeso (come in Modifica turni): le salva solo quando glielo chiedi. Ha un caratterino: ogni tanto ti prende in giro.</p>' +
             '<div class="seg-row">' + (k ? '<span class="seg-ok">Chiave inserita</span> <code>' + h(masked) + '</code>' : '<span>Nessuna chiave inserita.</span>') + '</div>' +
             '<div class="seg-row" style="margin-top:10px"><input id="seg-key" class="cc-input" type="password" autocomplete="off" placeholder="sk-ant-…" spellcheck="false">' +
@@ -549,20 +566,24 @@
             '<div class="seg-warn"><b>Attenzione alla chiave.</b> Resta solo in questo browser (memoria del dispositivo): non va su GitHub né nel database. Però le richieste partono dal browser, quindi chi usa questo dispositivo o un’estensione del browser potrebbe leggerla. Usa una chiave creata apposta su console.anthropic.com, con un limite di spesa basso, e cancellala da qui quando hai finito. Ogni messaggio costa qualche centesimo.</div>' +
             '<div class="seg-row" style="margin-top:14px"><button class="cc-btn primary" onclick="SEG.toggle(true)"' + (k ? '' : ' disabled') + '><span class="msym">chat</span>Apri la chat</button>' +
             '<button class="cc-btn" onclick="SEG.newChat()"><span class="msym">restart_alt</span>Nuova conversazione</button></div>' +
-            '<p style="margin-top:12px;font-size:12px">Modello: ' + MODEL + '. Puoi chiamarlo anche dal calendario con la bolla 🕴️ in basso a destra.</p></div>';
+            '<div class="seg-row" style="margin-top:14px"><label style="font-size:13px;font-weight:500">Modello</label><select class="cc-input" style="flex:1;min-width:220px" onchange="SEG.setModel(this.value)">' +
+            Object.keys(MODELS).map(function (m) { return '<option value="' + m + '"' + (m === model() ? ' selected' : '') + '>' + h(MODELS[m]) + '</option>'; }).join('') + '</select></div>' +
+            '<p style="margin-top:12px;font-size:12px">Modello in uso: ' + model() + '. Puoi chiamarlo anche dal calendario con la sua faccia in basso a destra.</p></div>';
     }
     SEG.saveKey = function () {
         var i = document.getElementById('seg-key'), v = (i && i.value || '').trim();
         if (!/^sk-ant-/.test(v)) { toast('Non sembra una chiave di Claude (inizia con sk-ant-).', true); return; }
         lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); renderSection(); refreshFab();
     };
+    SEG.setModel = function (m) { if (MODELS[m]) { lsSet(MODEL_STORE, m); toast('Marino ora usa ' + MODELS[m].split(' \u00b7')[0]); } };
     SEG.removeKey = function () { lsSet(KEY_STORE, null); SEG.toggle(false); toast('Chiave cancellata da questo dispositivo'); renderSection(); refreshFab(); };
 
     function boot() {
         mount();
-        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Marino \u00b7 segretario particolare', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
+        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Segretario Marino', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
         window.GT_RENDER = window.GT_RENDER || {};
         window.GT_RENDER.segretario = renderSection;
+        var nb = document.querySelector('#cc-nav button[data-sec="segretario"] .msym'); if (nb) nb.outerHTML = face(21);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
