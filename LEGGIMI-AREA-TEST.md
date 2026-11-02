@@ -110,7 +110,7 @@ Si inserisce la propria chiave API di Claude: resta **solo nel browser** (localS
 a destra (visibile solo da coordinatore). Marino legge il calendario, conta le ore,
 cambia caselle e reperibilità con gli stessi strumenti di Modifica turni (modifiche in sospeso,
 annullabili, salvate solo quando glielo si chiede), porta il calendario su un giorno e può
-lanciare il generatore annuale. Modello a scelta nella sezione: `claude-sonnet-5-5` (predefinito, costa la metà) o `claude-opus-5-5`. SDK ufficiale caricato da jsDelivr.
+lanciare il generatore annuale. Modello `claude-haiku-5-5` (il più economico). SDK ufficiale caricato da jsDelivr.
 Ha un carattere scherzoso e ogni tanto prende in giro il coordinatore.
 
 Attenzione: le chiamate a Claude partono dal browser, quindi la chiave è leggibile da chi usa
@@ -123,3 +123,5 @@ modificare i turni; altrimenti parla con l'operatore scelto in "Chi sei?", rispo
 turni e sulle ore ma non modifica niente (per i cambi rimanda al portale richieste o al
 coordinatore). Ognuno ha la sua conversazione. Se sul dispositivo non c'è ancora la chiave,
 la chat la chiede direttamente.
+
+L'amministratore lo accende o spegne per tutti dal pannello admin › Segretario Marino (documento `marino` in admin_config, campo `enabled`).

@@ -3197,6 +3197,7 @@
                 <button class="admin-tab-btn" data-tab="operatori" onclick="switchAdminTab('operatori',this)"><span class="material-icons-round">badge</span><span class="adm-nav-l">Nomi operatori</span></button>
                 <button class="admin-tab-btn" data-tab="turni" onclick="switchAdminTab('turni',this)"><span class="material-icons-round">schedule</span><span class="adm-nav-l">Orari turni</span></button>
                 <button class="admin-tab-btn" data-tab="testi" onclick="switchAdminTab('testi',this)"><span class="material-icons-round">campaign</span><span class="adm-nav-l">Avvisi</span></button>
+                <button class="admin-tab-btn" data-tab="marino" onclick="switchAdminTab('marino',this)"><span class="material-icons-round">smart_toy</span><span class="adm-nav-l">Segretario Marino</span></button>
                 <button class="admin-tab-btn" data-tab="esporta" onclick="switchAdminTab('esporta',this)"><span class="material-icons-round">file_download</span><span class="adm-nav-l">Esporta</span></button>
                 <div class="adm-nav-grp">Autisti</div>
                 <button class="admin-tab-btn" data-tab="scherzo" onclick="switchAdminTab('scherzo',this)"><span class="material-icons-round">celebration</span><span class="adm-nav-l">Scherzo</span></button>
@@ -3320,6 +3321,10 @@
                 <button class="btn-admin-save" onclick="saveAdminAnnouncements()"><span class="material-icons-round">save</span> SALVA AVVISI AGGIUNTIVI (per tutti)</button>
             </div>
 
+            <div class="admin-tab-panel" id="admin-tab-marino">
+                <div class="admin-section-label"><span class="material-icons-round" style="font-size:14px">smart_toy</span> Assistente Claude per i turni</div>
+                <div id="adm-marino"></div>
+            </div>
             <div class="admin-tab-panel" id="admin-tab-esporta">
                 <div class="admin-section-label"><span class="material-icons-round" style="font-size:14px">file_download</span> Esporta File Aggiornato</div>
                 <div class="export-info-box">

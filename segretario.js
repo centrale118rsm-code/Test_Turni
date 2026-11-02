@@ -18,9 +18,7 @@
     'use strict';
 
     var SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.135.0/+esm';
-    var MODELS = { 'claude-haiku-5-5': 'Haiku 5.5 \u00b7 il più economico, per domande semplici', 'claude-sonnet-5-5': 'Sonnet 5.5 \u00b7 consigliato', 'claude-opus-5-5': 'Opus 5.5 \u00b7 ragiona di più, costa il doppio di Sonnet' };
-    var MODEL_STORE = 'seg_model', MODEL_DEFAULT = 'claude-sonnet-5-5';
-    function model() { var m = lsGet(MODEL_STORE); return MODELS[m] ? m : MODEL_DEFAULT; }
+    var MODEL = 'claude-haiku-5-5';   // Haiku: il più economico
     var KEY_STORE = 'seg_api_key', CHAT_STORE = 'seg_chat_v1';
     var MAX_STEPS = 16;
 
@@ -357,7 +355,7 @@
     }
     function params() {
         var p = {
-            model: model(), max_tokens: 16000,
+            model: MODEL, max_tokens: 16000,
             system: systemPrompt(),
             thinking: { type: 'adaptive' },
             output_config: { effort: 'medium' },
@@ -365,7 +363,6 @@
             tools: toolDefs(),
             messages: SEG.api
         };
-        if (!SEG.noFallback && p.model !== 'claude-haiku-5-5') { p.betas = ['server-side-fallback-2026-07-01']; p.fallbacks = 'default'; }
         return p;
     }
     async function runTool(tu) {
@@ -395,6 +392,7 @@
     async function send(text) {
         if (SEG.busy) return;
         text = String(text || '').trim(); if (!text) return;
+        if (!SEG.enabled) return;
         if (!getKey()) { renderChat(); return; }
         if (ctx().id !== SEG.who) loadChat();
         SEG.busy = true;
@@ -409,8 +407,7 @@
                 var msg;
                 try { msg = await streamOnce(c, bubble); }
                 catch (e) {
-                    if (!SEG.noFallback && e && e.status === 400 && /fallback/i.test(String(e.message))) { SEG.noFallback = true; msg = await streamOnce(c, bubble); }
-                    else throw e;
+                    throw e;
                 }
                 SEG.api.push({ role: 'assistant', content: msg.content });
                 if (msg.stop_reason === 'refusal') { bubble.text += (bubble.text ? '\n\n' : '') + '(Su questa richiesta non posso aiutarti.)'; break; }
@@ -538,13 +535,14 @@
     function refreshFab() {
         var fab = document.getElementById('seg-fab'); if (!fab) return;
         var booted = typeof appBooted !== 'undefined' && appBooted && !(typeof SERVER_MODE !== 'undefined' && SERVER_MODE);
-        fab.classList.toggle('show', booted && !SEG.open);
+        fab.classList.toggle('show', booted && SEG.enabled && !SEG.open);
         fab.classList.toggle('busy', SEG.busy);
         // è cambiato chi usa l'app (password del coordinatore, "Chi sei?"): ognuno ha la sua conversazione
         if (!SEG.busy && booted && ctx().id !== SEG.who) { loadChat(); if (SEG.open) renderChat(); }
     }
     SEG.toggle = function (on) {
         SEG.open = on === undefined ? !SEG.open : !!on;
+        if (!SEG.enabled) SEG.open = false;
         var p = document.getElementById('seg-panel'); if (!p) return;
         p.classList.toggle('open', SEG.open); refreshFab();
         if (SEG.open) { renderChat(); setTimeout(function () { var i = document.getElementById('seg-in'); if (i) i.focus(); }, 50); }
@@ -594,6 +592,7 @@
     // ───────────────────────── sezione dell'area coordinatore ─────────────────────────
     function renderSection() {
         var main = document.getElementById('cc-main'); if (!main) return;
+        if (!SEG.enabled) { main.innerHTML = '<div class="seg-card"><h3>Marino è spento</h3><p>Lo ha disattivato l\u2019amministratore (pannello admin › Segretario Marino).</p></div>'; return; }
         var k = getKey(), masked = k ? k.slice(0, 10) + '…' + k.slice(-4) : '';
         main.innerHTML =
             '<div class="seg-card"><h3 style="display:flex;align-items:center;gap:10px">' + face(40) + 'Segretario Marino</h3>' +
@@ -605,19 +604,44 @@
             '<div class="seg-warn"><b>Attenzione alla chiave.</b> Resta solo in questo browser (memoria del dispositivo): non va su GitHub né nel database. Però le richieste partono dal browser, quindi chi usa questo dispositivo o un’estensione del browser potrebbe leggerla. Usa una chiave creata apposta su console.anthropic.com, con un limite di spesa basso, e cancellala da qui quando hai finito. Ogni messaggio costa qualche centesimo.</div>' +
             '<div class="seg-row" style="margin-top:14px"><button class="cc-btn primary" onclick="SEG.toggle(true)"' + (k ? '' : ' disabled') + '><span class="msym">chat</span>Apri la chat</button>' +
             '<button class="cc-btn" onclick="SEG.newChat()"><span class="msym">restart_alt</span>Nuova conversazione</button></div>' +
-            '<div class="seg-row" style="margin-top:14px"><label style="font-size:13px;font-weight:500">Modello</label><select class="cc-input" style="flex:1;min-width:220px" onchange="SEG.setModel(this.value)">' +
-            Object.keys(MODELS).map(function (m) { return '<option value="' + m + '"' + (m === model() ? ' selected' : '') + '>' + h(MODELS[m]) + '</option>'; }).join('') + '</select></div>' +
-            '<p style="margin-top:12px;font-size:12px">Modello in uso: ' + model() + '. Puoi chiamarlo anche dal calendario con la sua faccia in basso a destra.</p></div>';
+            '<p style="margin-top:12px;font-size:12px">Modello: Claude Haiku 5.5. Puoi chiamarlo anche dal calendario con la sua faccia in basso a destra.</p></div>';
     }
     SEG.saveKey = function (inputId) {
         var i = document.getElementById(inputId || 'seg-key'), v = (i && i.value || '').trim();
         if (!/^sk-ant-/.test(v)) { toast('Non sembra una chiave di Claude (inizia con sk-ant-).', true); return; }
         lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); if (document.getElementById('seg-key')) renderSection(); renderChat(); refreshFab();
     };
-    SEG.setModel = function (m) { if (MODELS[m]) { lsSet(MODEL_STORE, m); toast('Marino ora usa ' + MODELS[m].split(' \u00b7')[0]); } };
     SEG.removeKey = function () { lsSet(KEY_STORE, null); SEG.toggle(false); toast('Chiave cancellata da questo dispositivo'); renderSection(); refreshFab(); };
 
+    // ── interruttore dell'area admin: Marino acceso o spento per tutti ──
+    SEG.enabled = true;
+    function marinoDoc() { return typeof cfgRef === 'function' && typeof db !== 'undefined' && db ? cfgRef('marino') : null; }
+    function applyEnabled() {
+        if (!SEG.enabled && SEG.open) SEG.toggle(false);
+        var nb = document.querySelector('#cc-nav button[data-sec="segretario"]'); if (nb) nb.style.display = SEG.enabled ? '' : 'none';
+        if (!SEG.enabled && typeof ccSection !== 'undefined' && ccSection === 'segretario' && typeof ccGo === 'function') try { ccGo('panoramica'); } catch (e) {}
+        refreshFab(); renderAdmin();
+    }
+    function listenEnabled() {
+        if (typeof fbReady === 'undefined' || !fbReady || !marinoDoc()) { setTimeout(listenEnabled, 1500); return; }
+        try { marinoDoc().onSnapshot(function (d) { SEG.enabled = !(d.exists && d.data().enabled === false); applyEnabled(); }); } catch (e) { console.error(e); }
+    }
+    SEG.setEnabled = async function (on) {
+        var d = marinoDoc(); if (!d) return;
+        try { await d.set({ enabled: !!on, updatedAt: new Date().toISOString() }, { merge: true }); if (typeof showAdminToast === 'function') showAdminToast(on ? 'Marino acceso' : 'Marino spento'); }
+        catch (e) { console.error(e); if (typeof showAdminToast === 'function') showAdminToast('Salvataggio non riuscito'); }
+    };
+    function renderAdmin() {
+        var el = document.getElementById('adm-marino'); if (!el) return;
+        el.innerHTML = '<div style="display:flex;align-items:center;gap:14px;padding:16px;margin:0 16px 12px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card)">' + face(48) +
+            '<div style="flex:1"><b style="display:block;font-size:15px">Segretario Marino ' + (SEG.enabled ? '<span style="color:#16a34a">acceso</span>' : '<span style="color:#dc2626">spento</span>') + '</b>' +
+            '<small style="color:var(--text-sec)">Assistente Claude (Haiku 5.5) con la faccia in basso a destra: il coordinatore ci modifica i turni, gli operatori fanno domande. Spento, sparisce per tutti.</small></div>' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600"><input id="adm-marino-on" type="checkbox" style="width:22px;height:22px;accent-color:#16a34a" ' + (SEG.enabled ? 'checked' : '') + ' onchange="SEG.setEnabled(this.checked)">' + (SEG.enabled ? 'Attivo' : 'Disattivo') + '</label></div>' +
+            '<div style="margin:0 16px 16px;font-size:12.5px;color:var(--text-sec)">La chiave API resta sui singoli dispositivi (si inserisce dalla chat o dall’area coordinatore): da qui si accende o si spegne solo Marino.</div>';
+    }
     function boot() {
+        if (typeof ADM_TABS !== 'undefined') ADM_TABS.marino = ['Segretario Marino', 'Accendi o spegni l\u2019assistente Claude per tutti'];
+        renderAdmin(); listenEnabled();
         mount();
         if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Segretario Marino', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
         window.GT_RENDER = window.GT_RENDER || {};
