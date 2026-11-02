@@ -3506,6 +3506,7 @@
                 <div class="cc-nav-group">Area test</div>
                 <button data-sec="generazione" onclick="ccGo('generazione')"><span class="msym">tune</span><span>Generazione turni</span></button>
                 <button data-sec="richiestetest" onclick="ccGo('richiestetest')"><span class="msym">inventory_2</span><span>Richieste dal portale</span><span class="cc-count" id="cc-count-gtreq"></span></button>
+                <button data-sec="segretario" onclick="ccGo('segretario')"><span class="msym">support_agent</span><span>Segretario particolare</span></button>
                 <div class="cc-nav-group">Personale</div>
                 <button data-sec="operatori" onclick="ccGo('operatori')"><span class="msym">group</span><span>Operatori</span></button>
                 <button data-sec="ore" onclick="ccGo('ore')"><span class="msym">schedule</span><span>Conteggio ore</span></button>
@@ -5493,7 +5494,7 @@
         currentNotifTab = "attive";
 
     // ── Conteggio Orario / Area Coordinatore: stato globale ──────────────────
-    const COORD_PASSWORD = "cord.";
+    const COORD_PASSWORD = "118";
     let rawFinalData = [];                 // dati "puri" letti dall'ultimo Excel caricato
     let manualOverrides = {};              // chiave "NOME__MESE-giorno" -> {v,subV,customMinutes}
     let excelSyncedMarks = {};             // key -> valore (JSON) già segnato come riportato su Excel
@@ -15625,5 +15626,6 @@
     })();
 </script>
 <script src="generatore-turni.js"></script>
+<script src="segretario.js"></script>
 </body>
 </html>
