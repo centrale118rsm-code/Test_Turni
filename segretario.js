@@ -296,7 +296,7 @@
         var who = '';
         try { who = (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : ''; } catch (e) {}
         return [
-            'Sei il "segretario particolare" del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
+            'Ti chiami Marino e sei il segretario particolare del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
             who ? 'Il coordinatore si chiama ' + who + '.' : '',
             'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').',
             '',
@@ -357,7 +357,7 @@
     }
     function errText(e) {
         var s = e && (e.status || (e.error && e.error.status));
-        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Segretario particolare.';
+        if (s === 401) return 'La chiave API non è valida (401). Controllala nella sezione Marino dell\u2019area coordinatore.';
         if (s === 403) return 'La chiave non ha accesso a questo modello (403).';
         if (s === 429) return 'Troppe richieste o credito finito (429). Riprova tra poco o controlla il credito su console.anthropic.com.';
         if (s === 529 || s === 503) return 'I server di Claude sono sovraccarichi: riprova tra un minuto.';
@@ -368,7 +368,7 @@
     async function send(text) {
         if (SEG.busy) return;
         text = String(text || '').trim(); if (!text) return;
-        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Segretario particolare" dell’area coordinatore.' }); return; }
+        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Marino" dell’area coordinatore.' }); return; }
         SEG.busy = true;
         var startLen = SEG.api.length;
         SEG.api.push({ role: 'user', content: text });
@@ -474,13 +474,13 @@
         if (document.getElementById('seg-panel')) return;
         var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         var fab = document.createElement('button');
-        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Segretario particolare';
+        fab.id = 'seg-fab'; fab.className = 'cc-scope'; fab.type = 'button'; fab.title = 'Marino, il segretario';
         fab.innerHTML = '🕴️<span class="seg-dot"></span>'; fab.onclick = function () { SEG.toggle(); };
         document.body.appendChild(fab);
         var p = document.createElement('div');
-        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Segretario particolare');
+        p.id = 'seg-panel'; p.className = 'cc-scope'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Marino, il segretario');
         p.innerHTML =
-            '<div class="seg-head"><div class="seg-ava">🕴️</div><div><b>Segretario particolare</b><small id="seg-status">al tuo servizio (più o meno)</small></div>' +
+            '<div class="seg-head"><div class="seg-ava">🕴️</div><div><b>Marino</b><small id="seg-status">segretario particolare, al tuo servizio (più o meno)</small></div>' +
             '<button class="seg-ib" title="Nuova chat" onclick="SEG.newChat()"><span class="msym">add_comment</span></button>' +
             '<button class="seg-ib" style="margin-left:0" title="Chiudi" onclick="SEG.toggle(false)"><span class="msym">close</span></button></div>' +
             '<div class="seg-msgs" id="seg-msgs"></div>' +
@@ -524,12 +524,12 @@
     function renderChat() {
         var box = document.getElementById('seg-msgs'); if (!box) return;
         if (!SEG.view.length) {
-            box.innerHTML = '<div class="seg-empty"><span class="seg-big">🕴️</span>Eccomi, capo. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
+            box.innerHTML = '<div class="seg-empty"><span class="seg-big">🕴️</span>Eccomi, capo: sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
                 '<div class="seg-chips">' + SUGGEST.map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
         } else box.innerHTML = SEG.view.map(msgHtml).join('');
         box.scrollTop = box.scrollHeight;
         var sb = document.getElementById('seg-send'); if (sb) sb.disabled = SEG.busy;
-        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'sto pensando…' : 'al tuo servizio (più o meno)';
+        var s = document.getElementById('seg-status'); if (s) s.textContent = SEG.busy ? 'Marino sta pensando…' : 'segretario particolare, al tuo servizio (più o meno)';
         refreshFab();
     }
     var liveRaf = 0;
@@ -540,8 +540,8 @@
         var main = document.getElementById('cc-main'); if (!main) return;
         var k = getKey(), masked = k ? k.slice(0, 10) + '…' + k.slice(-4) : '';
         main.innerHTML =
-            '<div class="seg-card"><h3>🕴️ Il tuo segretario particolare</h3>' +
-            '<p>Un assistente Claude che legge il calendario, risponde sui turni e li modifica per te. Le modifiche che fa restano in sospeso (come in Modifica turni): le salva solo quando glielo chiedi. Ha un caratterino: ogni tanto ti prende in giro.</p>' +
+            '<div class="seg-card"><h3>🕴️ Marino, il tuo segretario particolare</h3>' +
+            '<p>Marino è un assistente Claude che legge il calendario, risponde sui turni e li modifica per te. Le modifiche che fa restano in sospeso (come in Modifica turni): le salva solo quando glielo chiedi. Ha un caratterino: ogni tanto ti prende in giro.</p>' +
             '<div class="seg-row">' + (k ? '<span class="seg-ok">Chiave inserita</span> <code>' + h(masked) + '</code>' : '<span>Nessuna chiave inserita.</span>') + '</div>' +
             '<div class="seg-row" style="margin-top:10px"><input id="seg-key" class="cc-input" type="password" autocomplete="off" placeholder="sk-ant-…" spellcheck="false">' +
             '<button class="cc-btn primary" onclick="SEG.saveKey()"><span class="msym">key</span>' + (k ? 'Sostituisci' : 'Salva chiave') + '</button>' +
@@ -560,7 +560,7 @@
 
     function boot() {
         mount();
-        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Segretario particolare', sub: 'Un assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
+        if (typeof CC_SECTIONS !== 'undefined') CC_SECTIONS.segretario = { title: 'Marino \u00b7 segretario particolare', sub: 'Il tuo assistente Claude con cui chattare dei turni: li legge, li modifica e ti prende pure in giro. Solo area test.' };
         window.GT_RENDER = window.GT_RENDER || {};
         window.GT_RENDER.segretario = renderSection;
     }
