@@ -41,6 +41,16 @@
     function norm(n) { return String(n || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, ''); }
     function fail(msg) { var e = new Error(msg); e.toolError = true; throw e; }
     function loggedIn() { return typeof isCoordLoggedIn === 'function' && isCoordLoggedIn(); }
+    // chi sta parlando con Marino: il coordinatore (dopo la password) oppure l'operatore scelto in "Chi sei?"
+    function coordName() { try { return (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : 'MOSCA'; } catch (e) { return 'MOSCA'; } }
+    function ctx() {
+        if (loggedIn()) return { coord: true, name: coordName(), op: null, id: 'coord' };
+        var n = ''; try { n = (typeof userIdentity !== 'undefined' && userIdentity) ? String(userIdentity) : ''; } catch (e) {}
+        var op = null;
+        if (n && typeof drivers !== 'undefined') op = drivers.filter(function (d) { return norm(d.name) === norm(n) || norm(d.originalName) === norm(n); })[0] || null;
+        return { coord: false, name: n && !/^ospite$/i.test(n) ? n : '', op: op, id: 'op:' + norm(n || 'ospite') };
+    }
+    function cap(s) { s = String(s || '').toLowerCase(); return s.replace(/(^|[\s'])\S/g, function (c) { return c.toUpperCase(); }); }
 
     // ───────────────────────── calendario ─────────────────────────
     function ready() { if (typeof finalData === 'undefined' || !finalData.length || typeof drivers === 'undefined') fail('Il calendario non è ancora caricato: riprova tra un attimo.'); }
@@ -113,7 +123,9 @@
             run: function () {
                 ready();
                 var codes = wheelPaletteItems().map(function (i) { return (i.subV ? 'assenza ' + i.subV : i.v) + ' = ' + i.label + (i.time ? ' (' + i.time + ')' : ''); });
+                var c = ctx();
                 return {
+                    chi_ti_parla: c.coord ? 'il coordinatore ' + c.name : (c.op ? 'l\u2019operatore ' + c.op.name : (c.name || 'un ospite')),
                     oggi: isoOf(new Date()) + ' ' + WD[new Date().getDay()],
                     anno_aperto: SHIFT_YEAR,
                     anno_di_lavoro: typeof activeYear !== 'undefined' ? activeYear : SHIFT_YEAR,
@@ -146,6 +158,7 @@
             }
         },
         modifica_turni: {
+            coordOnly: true,
             description: 'Cambia una o più caselle del calendario in un colpo solo (un solo passo di annullamento). Per ogni casella indica o un turno ("turno") o un’assenza ("assenza"), oppure svuota=true. Le modifiche restano in sospeso finché non vengono salvate. Con copertura_automatica=true, per le nuove assenze l’app cerca da sola chi copre e sposta la reperibilità se serve (stessa logica della ruota in modalità Auto).',
             schema: {
                 type: 'object', additionalProperties: false, required: ['modifiche'],
@@ -205,6 +218,7 @@
             }
         },
         imposta_reperibilita: {
+            coordOnly: true,
             description: 'Assegna la reperibilità di un giorno (dalle 13:00 di quel giorno alle 13:00 del giorno dopo) a un operatore, oppure la toglie (operatore vuoto). Resta in sospeso finché non si salva.',
             schema: {
                 type: 'object', additionalProperties: false, required: ['data', 'operatore'],
@@ -250,11 +264,13 @@
             }
         },
         annulla_ultima_modifica: {
+            coordOnly: true,
             description: 'Annulla l’ultima modifica in sospeso (come il tasto Annulla della ruota).',
             schema: { type: 'object', properties: {}, additionalProperties: false },
             run: function () { if (!coordUndoStack.length) return 'Non c’è niente da annullare.'; coordUndo(); return { fatto: 'annullata', da_salvare: pendingChangesCount() }; }
         },
         salva_modifiche: {
+            coordOnly: true,
             description: 'Salva tutte le modifiche in sospeso, che diventano visibili a tutti (nell’area test: nel database finto). Usalo SOLO quando l’utente ti chiede esplicitamente di salvare.',
             schema: { type: 'object', properties: {}, additionalProperties: false },
             run: async function () {
@@ -274,6 +290,7 @@
             }
         },
         genera_anno: {
+            coordOnly: true,
             description: 'Usa il generatore automatico (sezione Generazione turni) per creare l’anno indicato con le regole impostate lì. Lavoro grosso: chiedi conferma all’utente prima. Se l’anno era già generato l’app chiede conferma per rigenerarlo.',
             schema: { type: 'object', additionalProperties: false, required: ['anno'], properties: { anno: { type: 'integer' } } },
             run: async function (a) {
@@ -288,39 +305,46 @@
         }
     };
     function toolDefs() {
-        return Object.keys(TOOLS).map(function (k) { return { name: k, description: TOOLS[k].description, input_schema: TOOLS[k].schema, eager_input_streaming: true }; });
+        var c = ctx();
+        return Object.keys(TOOLS).filter(function (k) { return c.coord || !TOOLS[k].coordOnly; }).map(function (k) { return { name: k, description: TOOLS[k].description, input_schema: TOOLS[k].schema, eager_input_streaming: true }; });
     }
     SEG._t = TOOLS;
     var TOOL_LABEL = { info_generali: 'Guardo chi c’è', leggi_turni: 'Leggo i turni', modifica_turni: 'Modifico i turni', imposta_reperibilita: 'Sistemo la reperibilità', conteggio_ore: 'Conto le ore', annulla_ultima_modifica: 'Annullo', salva_modifiche: 'Salvo', mostra_nel_calendario: 'Apro il calendario', genera_anno: 'Genero l’anno' };
 
     // ───────────────────────── prompt ─────────────────────────
     function systemPrompt() {
-        var who = '';
-        try { who = (typeof coordinatorName !== 'undefined' && coordinatorName) ? String(coordinatorName) : ''; } catch (e) {}
-        return [
-            'Ti chiami Marino e sei il segretario del coordinatore dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
-            who ? 'Il coordinatore si chiama ' + who + '.' : '',
-            'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').',
-            '',
-            'CARATTERE: sei simpatico, scherzoso, un po’ sfacciato. Dai del tu. Ogni tanto prendi in giro il coordinatore con affetto (per le richieste all’ultimo minuto, per i turni che cambia tre volte, per il caffè che di sicuro ha in mano…), ma senza mai essere offensivo e senza esagerare: una battuta ogni tanto, non in ogni frase. Quando si parla di turni sei preciso e affidabile: lo scherzo non deve mai rendere ambigua un’informazione. Risposte brevi, da chat; elenchi solo quando servono.',
-            '',
-            'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, modifichi caselle e reperibilità, annulli, salvi, porti il calendario su un giorno, lanci il generatore annuale. Non inventare mai turni: se non li hai letti, leggili.',
-            '',
-            'REGOLE DEI TURNI (da tenere d’occhio quando proponi o fai modifiche, e da segnalare se una richiesta le viola):',
+        var c = ctx(), today = 'Oggi è ' + new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (' + isoOf(new Date()) + ').';
+        var who = c.coord
+            ? 'Stai parlando con il COORDINATORE dei turni, ' + cap(c.name) + ': chiamalo per nome (' + cap(c.name) + '). È il capo: può chiederti di leggere e di modificare i turni di tutti.'
+            : (c.op
+                ? 'Stai parlando con ' + cap(c.op.name) + ', un AUTISTA SOCCORRITORE (nel calendario è la colonna "' + c.op.name + '"): chiamalo per nome. Quando dice "io", "i miei turni", "quando lavoro" intende la colonna ' + c.op.name + '. Non è il coordinatore: con lui leggi e spieghi i turni, ma non puoi modificarli. Se vuole un cambio, ferie o un permesso, digli di fare la richiesta dal portale richieste (freccia a destra dello schermo) o di parlarne con il coordinatore ' + cap(coordName()) + '.'
+                : 'Stai parlando con ' + (c.name ? cap(c.name) : 'una persona che non ha scelto chi è (menu › Chi sei?)') + ', che non è il coordinatore e non è una colonna del calendario: leggi e spieghi i turni, ma non puoi modificarli.');
+        var teaseTarget = c.coord ? 'il coordinatore (per le richieste all’ultimo minuto, per i turni che cambia tre volte, per il caffè che di sicuro ha in mano…)' : 'il collega (per le notti di cui si lamenta, per le ferie che chiede sempre ad agosto, per il caffè della macchinetta…)';
+        var can = c.coord
+            ? 'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, modifichi caselle e reperibilità, annulli, salvi, porti il calendario su un giorno, lanci il generatore annuale. Non inventare mai turni: se non li hai letti, leggili.'
+            : 'COSA PUOI FARE: con gli strumenti leggi il calendario, conti le ore, porti il calendario su un giorno. NON puoi modificare niente. Non inventare mai turni: se non li hai letti, leggili.';
+        var lines = [
+            'Ti chiami Marino e sei il segretario dei turni degli autisti soccorritori della centrale 118 (app turni, versione AREA TEST: i dati sono finti, nel browser). Parli sempre in italiano.',
+            who, today, '',
+            'CARATTERE: sei simpatico, scherzoso, un po’ sfacciato. Dai del tu. Ogni tanto prendi in giro ' + teaseTarget + ' con affetto, senza mai essere offensivo e senza esagerare: una battuta ogni tanto, non in ogni frase. Quando si parla di turni sei preciso e affidabile: lo scherzo non deve mai rendere ambigua un’informazione. Risposte brevi, da chat; elenchi solo quando servono.',
+            '', can, '',
+            'REGOLE DEI TURNI' + (c.coord ? ' (da tenere d’occhio quando proponi o fai modifiche, e da segnalare se una richiesta le viola)' : '') + ':',
             '- Copertura di ogni giorno: 2 di mattina, 2 di pomeriggio, 1 di notte.',
             '- Turnisti (maiuscole) a ciclo; diurnisti (minuscole m/p/r). 36 ore a settimana.',
             '- Dopo una notte (N) sempre smonto (S) e poi riposo, anche per chi copre una notte non sua.',
             '- Mai 7 giorni di lavoro di fila. Riposi settimanali da rispettare.',
             '- La reperibilità va dalle 13:00 alle 13:00 del giorno dopo: il giorno dopo il reperibile fa pomeriggio o notte, mai la mattina.',
             '- Al massimo 2 persone in ferie nello stesso giorno.',
-            '',
-            'COME LAVORI:',
+            '', 'COME LAVORI:'
+        ];
+        if (c.coord) lines.push(
             '- Le modifiche restano IN SOSPESO (si vedono nel calendario con l’asterisco) finché non vengono salvate. Salva solo quando l’utente lo chiede esplicitamente; dopo una modifica ricordagli che va salvata.',
             '- Prima di cambiare più di una decina di caselle, o di generare un anno, riassumi cosa farai e chiedi conferma.',
+            '- Dopo una modifica dì in breve cosa hai cambiato e se la copertura o le regole ne risentono.');
+        lines.push(
             '- Se una richiesta è ambigua (quale operatore, quale giorno), chiedi. Se manca l’anno, intendi l’anno aperto nel calendario.',
-            '- Dopo una modifica dì in breve cosa hai cambiato e se la copertura o le regole ne risentono.',
-            '- Le date per gli strumenti sono AAAA-MM-GG; all’utente scrivile in modo naturale (es. "martedì 5 gennaio").'
-        ].join('\n').replace('dì', 'dì');
+            '- Le date per gli strumenti sono AAAA-MM-GG; all’utente scrivile in modo naturale (es. "martedì 5 gennaio").');
+        return lines.join('\n');
     }
 
     // ───────────────────────── Claude ─────────────────────────
@@ -347,6 +371,7 @@
     async function runTool(tu) {
         var t = TOOLS[tu.name];
         if (!t) return { type: 'tool_result', tool_use_id: tu.id, content: 'Strumento sconosciuto: ' + tu.name, is_error: true };
+        if (t.coordOnly && !ctx().coord) return { type: 'tool_result', tool_use_id: tu.id, content: 'Non permesso: solo il coordinatore (entrato con la password) può modificare i turni.', is_error: true };
         var input = tu.input;
         if (!input || typeof input !== 'object' || Array.isArray(input)) return { type: 'tool_result', tool_use_id: tu.id, content: 'INVALID_JSON: parametri non validi, riprova.', is_error: true };
         try {
@@ -370,7 +395,8 @@
     async function send(text) {
         if (SEG.busy) return;
         text = String(text || '').trim(); if (!text) return;
-        if (!getKey()) { addView({ role: 'sys', text: 'Prima inserisci la tua chiave API nella sezione "Segretario Marino" dell’area coordinatore.' }); return; }
+        if (!getKey()) { renderChat(); return; }
+        if (ctx().id !== SEG.who) loadChat();
         SEG.busy = true;
         var startLen = SEG.api.length;
         SEG.api.push({ role: 'user', content: text });
@@ -423,14 +449,16 @@
 
     // ───────────────────────── memoria della chat ─────────────────────────
     function addView(v) { v.tools = v.tools || []; SEG.view.push(v); return v; }
+    function chatKey() { return CHAT_STORE + ':' + (SEG.who || 'coord'); }
     function saveChat() {
-        if (!lsSet(CHAT_STORE, JSON.stringify({ api: SEG.api, view: SEG.view.map(function (v) { return { role: v.role, text: v.text, tools: v.tools, err: v.err }; }) }))) {
+        if (!lsSet(chatKey(), JSON.stringify({ api: SEG.api, view: SEG.view.map(function (v) { return { role: v.role, text: v.text, tools: v.tools, err: v.err }; }) }))) {
             // memoria piena: si tiene solo la vista
-            lsSet(CHAT_STORE, null);
+            lsSet(chatKey(), null);
         }
     }
     function loadChat() {
-        try { var o = JSON.parse(lsGet(CHAT_STORE) || 'null'); if (o && Array.isArray(o.api)) { SEG.api = o.api; SEG.view = o.view || []; } } catch (e) {}
+        SEG.who = ctx().id; SEG.api = []; SEG.view = [];
+        try { var o = JSON.parse(lsGet(chatKey()) || 'null'); if (o && Array.isArray(o.api)) { SEG.api = o.api; SEG.view = o.view || []; } } catch (e) {}
         // una conversazione deve finire con la risposta dell'assistente
         while (SEG.api.length && SEG.api[SEG.api.length - 1].role === 'user') SEG.api.pop();
     }
@@ -509,14 +537,14 @@
     }
     function refreshFab() {
         var fab = document.getElementById('seg-fab'); if (!fab) return;
-        var show = loggedIn() && !!getKey();
-        fab.classList.toggle('show', show && !SEG.open);
+        var booted = typeof appBooted !== 'undefined' && appBooted && !(typeof SERVER_MODE !== 'undefined' && SERVER_MODE);
+        fab.classList.toggle('show', booted && !SEG.open);
         fab.classList.toggle('busy', SEG.busy);
-        if (!show && SEG.open && !loggedIn()) SEG.toggle(false);
+        // è cambiato chi usa l'app (password del coordinatore, "Chi sei?"): ognuno ha la sua conversazione
+        if (!SEG.busy && booted && ctx().id !== SEG.who) { loadChat(); if (SEG.open) renderChat(); }
     }
     SEG.toggle = function (on) {
         SEG.open = on === undefined ? !SEG.open : !!on;
-        if (SEG.open && !loggedIn()) SEG.open = false;
         var p = document.getElementById('seg-panel'); if (!p) return;
         p.classList.toggle('open', SEG.open); refreshFab();
         if (SEG.open) { renderChat(); setTimeout(function () { var i = document.getElementById('seg-in'); if (i) i.focus(); }, 50); }
@@ -527,6 +555,13 @@
     };
     SEG.ask = function (t) { send(t); };
     var SUGGEST = ['Chi è di notte questo fine settimana?', 'Metti Bianchi in ferie venerdì e trova chi copre', 'Come siamo messi con le ore questo mese?', 'Dimmi qualcosa di carino (se ci riesci)'];
+    var SUGGEST_OP = ['Quando lavoro la prossima settimana?', 'Quante ore ho fatto questo mese?', 'Chi è reperibile domani?', 'Raccontami una barzelletta sui turni'];
+    function keyFormHtml() {
+        return '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>Per parlare con me serve una chiave API di Claude (inizia con sk-ant-). Resta solo su questo dispositivo.' +
+            '<div class="seg-row" style="margin-top:12px;justify-content:center"><input id="seg-key-p" class="cc-input" type="password" autocomplete="off" placeholder="sk-ant-…" spellcheck="false" style="min-width:0">' +
+            '<button class="cc-btn primary" type="button" onclick="SEG.saveKey(\'seg-key-p\')">Salva</button></div>' +
+            '<div class="seg-warn" style="text-align:left">Chi usa questo dispositivo o un\u2019estensione del browser potrebbe leggerla: usa una chiave con un limite di spesa basso.</div></div>';
+    }
     function fmt(text) {
         // grassetto **…** e a capo; il resto è testo semplice
         return h(text).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
@@ -540,9 +575,13 @@
     }
     function renderChat() {
         var box = document.getElementById('seg-msgs'); if (!box) return;
-        if (!SEG.view.length) {
-            box.innerHTML = '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>Eccomi, capo: sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).' +
-                '<div class="seg-chips">' + SUGGEST.map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
+        var c = ctx();
+        if (!getKey()) box.innerHTML = keyFormHtml();
+        else if (!SEG.view.length) {
+            var hi = c.coord ? 'Eccomi, ' + cap(c.name) + ': sono Marino. Chiedimi dei turni, fammi spostare qualcuno, o lamentati pure: sono pagato per ascoltare (anzi no, non sono pagato).'
+                : 'Ciao' + (c.name ? ' ' + cap(c.name) : '') + ', sono Marino! Chiedimi dei tuoi turni, delle ore o di chi lavora quando. Modificarli no: quello lo fa il capo.';
+            box.innerHTML = '<div class="seg-empty"><span class="seg-big">' + face(72) + '</span>' + h(hi) +
+                '<div class="seg-chips">' + (c.coord ? SUGGEST : SUGGEST_OP).map(function (s) { return '<button type="button" onclick="SEG.ask(this.textContent)">' + h(s) + '</button>'; }).join('') + '</div></div>';
         } else box.innerHTML = SEG.view.map(msgHtml).join('');
         box.scrollTop = box.scrollHeight;
         var sb = document.getElementById('seg-send'); if (sb) sb.disabled = SEG.busy;
@@ -570,10 +609,10 @@
             Object.keys(MODELS).map(function (m) { return '<option value="' + m + '"' + (m === model() ? ' selected' : '') + '>' + h(MODELS[m]) + '</option>'; }).join('') + '</select></div>' +
             '<p style="margin-top:12px;font-size:12px">Modello in uso: ' + model() + '. Puoi chiamarlo anche dal calendario con la sua faccia in basso a destra.</p></div>';
     }
-    SEG.saveKey = function () {
-        var i = document.getElementById('seg-key'), v = (i && i.value || '').trim();
+    SEG.saveKey = function (inputId) {
+        var i = document.getElementById(inputId || 'seg-key'), v = (i && i.value || '').trim();
         if (!/^sk-ant-/.test(v)) { toast('Non sembra una chiave di Claude (inizia con sk-ant-).', true); return; }
-        lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); renderSection(); refreshFab();
+        lsSet(KEY_STORE, v); toast('Chiave salvata su questo dispositivo'); if (document.getElementById('seg-key')) renderSection(); renderChat(); refreshFab();
     };
     SEG.setModel = function (m) { if (MODELS[m]) { lsSet(MODEL_STORE, m); toast('Marino ora usa ' + MODELS[m].split(' \u00b7')[0]); } };
     SEG.removeKey = function () { lsSet(KEY_STORE, null); SEG.toggle(false); toast('Chiave cancellata da questo dispositivo'); renderSection(); refreshFab(); };

@@ -116,3 +116,10 @@ Ha un carattere scherzoso e ogni tanto prende in giro il coordinatore.
 Attenzione: le chiamate a Claude partono dal browser, quindi la chiave è leggibile da chi usa
 il dispositivo o da un'estensione del browser. Usare una chiave dedicata con limite di spesa
 e cancellarla dalla sezione quando non serve.
+
+Marino lo può usare chiunque: la faccia in basso a destra c'è per tutti. Se si è entrati come
+coordinatore (password) parla con il coordinatore (Mosca, o il nome nelle impostazioni) e può
+modificare i turni; altrimenti parla con l'operatore scelto in "Chi sei?", risponde sui suoi
+turni e sulle ore ma non modifica niente (per i cambi rimanda al portale richieste o al
+coordinatore). Ognuno ha la sua conversazione. Se sul dispositivo non c'è ancora la chiave,
+la chat la chiede direttamente.
