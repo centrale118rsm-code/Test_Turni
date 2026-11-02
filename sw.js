@@ -5,7 +5,7 @@
 // v7: modalità offline. Il nome della cache è solo di questa app: le app dello stesso sito
 // (ufficiale autisti, infermieri) hanno le loro cache e non si toccano.
 const CACHE_PREFIX = 'test-autisti-';   // AREA TEST: cache propria, non tocca quelle delle app vere
-const CACHE_NAME = CACHE_PREFIX + 'v17';
+const CACHE_NAME = CACHE_PREFIX + 'v18';
 const OLD_CACHES = [];   // AREA TEST: non cancella le cache delle altre app sullo stesso sito
 
 const urlsToCache = [
@@ -18,6 +18,7 @@ const urlsToCache = [
   './area-test.js',
   './firebase-mock.js',
   './generatore-turni.js',
+  './segretario.js',
   './firebase-modular-shim.js'
 ];
 // librerie e caratteri presi da Internet che servono anche senza rete
